@@ -45,3 +45,7 @@ build/
 # Temporary folders
 tmp/
 temp/
+
+# Prisma
+# Keep the generated client in version control for Vercel
+# node_modules/.prisma/
