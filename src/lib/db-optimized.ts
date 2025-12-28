@@ -1,0 +1,453 @@
+import { prisma } from "./prisma"
+import { cache } from "./cache"
+
+// Optimized database queries with caching
+export class OptimizedDbService {
+  // Get user preferences with caching
+  static async getUserPreferences(userId: string) {
+    return cache.getUserPreferences(userId, async () => {
+      return prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          preferences: true,
+          gtdEnabled: true,
+        },
+      })
+    })
+  }
+
+  // Get task counts with caching and optimized queries
+  static async getTaskCounts(tenantId: string, userId: string) {
+    const cacheKey = `counts:${tenantId}:${userId}`
+    
+    return cache.getOrSet(cacheKey, async () => {
+      // Use a single query with conditional aggregation for better performance
+      const result = await prisma.task.groupBy({
+        by: ["status"],
+        where: {
+          tenantId,
+          userId,
+        },
+        _count: {
+          id: true,
+        },
+      })
+
+      // Transform to expected format
+      const counts = {
+        active: 0,
+        completed: 0,
+        archived: 0,
+        overdue: 0,
+        today: 0,
+        upcoming: 0,
+      }
+
+      result.forEach((group) => {
+        counts[group.status as keyof typeof counts] = group._count.id
+      })
+
+      // Get date-based counts in a separate optimized query
+      const now = new Date()
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const tomorrow = new Date(today)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+
+      const [overdue, todayTasks, upcoming] = await Promise.all([
+        prisma.task.count({
+          where: {
+            tenantId,
+            userId,
+            status: "active",
+            dueDate: { lt: today },
+          },
+        }),
+        prisma.task.count({
+          where: {
+            tenantId,
+            userId,
+            status: "active",
+            dueDate: { gte: today, lt: tomorrow },
+          },
+        }),
+        prisma.task.count({
+          where: {
+            tenantId,
+            userId,
+            status: "active",
+            dueDate: { 
+              gte: tomorrow,
+              lt: new Date(tomorrow.getTime() + 7 * 24 * 60 * 60 * 1000) // 7 days from tomorrow
+            },
+          },
+        }),
+      ])
+
+      counts.overdue = overdue
+      counts.today = todayTasks
+      counts.upcoming = upcoming
+
+      return counts
+    }, 60) // Cache for 1 minute
+  }
+
+  // Get project statistics with caching
+  static async getProjectStats(tenantId: string, userId: string) {
+    return cache.getProjectStats(tenantId, userId, async () => {
+      // Optimized query using aggregation
+      const [projectCounts, taskCounts] = await Promise.all([
+        prisma.project.groupBy({
+          by: ["status"],
+          where: { tenantId, userId },
+          _count: { id: true },
+        }),
+        prisma.task.groupBy({
+          by: ["projectId"],
+          where: {
+            tenantId,
+            userId,
+            projectId: { not: null },
+          },
+          _count: { id: true },
+        }),
+      ])
+
+      const stats = {
+        totalProjects: projectCounts.reduce((sum, group) => sum + group._count.id, 0),
+        activeProjects: projectCounts.find(g => g.status === "active")?._count.id || 0,
+        completedProjects: projectCounts.find(g => g.status === "completed")?._count.id || 0,
+        averageTasksPerProject: taskCounts.length > 0 
+          ? Math.round(taskCounts.reduce((sum, group) => sum + group._count.id, 0) / taskCounts.length)
+          : 0,
+      }
+
+      return stats
+    })
+  }
+
+  // Get contexts with caching and optimized query
+  static async getContexts(tenantId: string, userId: string) {
+    return cache.getContextList(tenantId, userId, async () => {
+      return prisma.context.findMany({
+        where: { tenantId, userId },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          icon: true,
+          isDefault: true,
+          _count: {
+            select: {
+              tasks: {
+                where: { status: "active" },
+              },
+            },
+          },
+        },
+        orderBy: [
+          { isDefault: "desc" },
+          { name: "asc" },
+        ],
+      })
+    })
+  }
+
+  // Get areas with caching and optimized query
+  static async getAreas(tenantId: string, userId: string) {
+    return cache.getAreaList(tenantId, userId, async () => {
+      return prisma.area.findMany({
+        where: { tenantId, userId },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          color: true,
+          _count: {
+            select: {
+              tasks: {
+                where: { status: "active" },
+              },
+              projects: {
+                where: { status: "active" },
+              },
+            },
+          },
+        },
+        orderBy: { name: "asc" },
+      })
+    })
+  }
+
+  // Get inbox count with caching
+  static async getInboxCount(tenantId: string, userId: string) {
+    return cache.getInboxCount(tenantId, userId, async () => {
+      return prisma.inboxItem.count({
+        where: {
+          tenantId,
+          userId,
+          processed: false,
+        },
+      })
+    })
+  }
+
+  // Get tasks with optimized query and pagination
+  static async getTasks(
+    tenantId: string,
+    userId: string,
+    filters: {
+      status?: string
+      priority?: string
+      projectId?: string
+      contextId?: string
+      areaId?: string
+      dueDate?: string
+      search?: string
+      limit?: number
+      offset?: number
+    } = {}
+  ) {
+    const {
+      status = "active",
+      priority,
+      projectId,
+      contextId,
+      areaId,
+      dueDate,
+      search,
+      limit = 50,
+      offset = 0,
+    } = filters
+
+    // Build optimized where clause
+    const where: any = {
+      tenantId,
+      userId,
+      status,
+    }
+
+    if (priority) where.priority = priority
+    if (projectId) where.projectId = projectId
+    if (contextId) where.contextId = contextId
+    if (areaId) where.areaId = areaId
+
+    if (search) {
+      where.OR = [
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+      ]
+    }
+
+    // Handle date filters
+    if (dueDate) {
+      const now = new Date()
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const tomorrow = new Date(today)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+
+      switch (dueDate) {
+        case "today":
+          where.dueDate = { gte: today, lt: tomorrow }
+          break
+        case "overdue":
+          where.dueDate = { lt: today }
+          break
+        case "upcoming":
+          // Match the logic from /api/tasks/upcoming - next 7 days
+          const futureDate = new Date(tomorrow)
+          futureDate.setDate(futureDate.getDate() + 7)
+          where.dueDate = { gte: tomorrow, lt: futureDate }
+          break
+        case "no-due-date":
+          where.dueDate = null
+          break
+      }
+    }
+
+    // Use optimized query with selective includes
+    const [tasks, totalCount] = await Promise.all([
+      prisma.task.findMany({
+        where,
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          status: true,
+          priority: true,
+          dueDate: true,
+          completedAt: true,
+          tags: true,
+          createdAt: true,
+          updatedAt: true,
+          project: {
+            select: { id: true, name: true },
+          },
+          context: {
+            select: { id: true, name: true, icon: true },
+          },
+          area: {
+            select: { id: true, name: true, color: true },
+          },
+        },
+        orderBy: [
+          { priority: "desc" },
+          { dueDate: "asc" },
+          { createdAt: "desc" },
+        ],
+        take: limit,
+        skip: offset,
+      }),
+      prisma.task.count({ where }),
+    ])
+
+    return {
+      tasks,
+      totalCount,
+      hasMore: offset + limit < totalCount,
+    }
+  }
+
+  // Get projects with optimized query
+  static async getProjects(
+    tenantId: string,
+    userId: string,
+    filters: {
+      status?: string
+      areaId?: string
+      limit?: number
+      offset?: number
+    } = {}
+  ) {
+    const {
+      status = "active",
+      areaId,
+      limit = 50,
+      offset = 0,
+    } = filters
+
+    const where: any = {
+      tenantId,
+      userId,
+      status,
+    }
+
+    if (areaId) where.areaId = areaId
+
+    const [projects, totalCount] = await Promise.all([
+      prisma.project.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          status: true,
+          outcome: true,
+          createdAt: true,
+          updatedAt: true,
+          area: {
+            select: { id: true, name: true, color: true },
+          },
+          _count: {
+            select: {
+              tasks: {
+                where: { status: "active" },
+              },
+            },
+          },
+        },
+        orderBy: [
+          { status: "asc" },
+          { updatedAt: "desc" },
+        ],
+        take: limit,
+        skip: offset,
+      }),
+      prisma.project.count({ where }),
+    ])
+
+    return {
+      projects,
+      totalCount,
+      hasMore: offset + limit < totalCount,
+    }
+  }
+
+  // Invalidate caches when data changes
+  static async invalidateUserCaches(tenantId: string, userId: string) {
+    await cache.invalidateUserCache(tenantId, userId)
+  }
+
+  static async invalidateTenantCaches(tenantId: string) {
+    await cache.invalidateTenantCache(tenantId)
+  }
+
+  // Batch operations for better performance
+  static async batchUpdateTasks(
+    tenantId: string,
+    userId: string,
+    taskIds: string[],
+    updates: any
+  ) {
+    // Validate all tasks belong to user first
+    const taskCount = await prisma.task.count({
+      where: {
+        id: { in: taskIds },
+        tenantId,
+        userId,
+      },
+    })
+
+    if (taskCount !== taskIds.length) {
+      throw new Error("Some tasks not found or unauthorized")
+    }
+
+    // Perform batch update
+    const result = await prisma.task.updateMany({
+      where: {
+        id: { in: taskIds },
+        tenantId,
+        userId,
+      },
+      data: updates,
+    })
+
+    // Invalidate caches
+    await this.invalidateUserCaches(tenantId, userId)
+
+    return result
+  }
+
+  // Batch delete for better performance
+  static async batchDeleteTasks(
+    tenantId: string,
+    userId: string,
+    taskIds: string[]
+  ) {
+    // Validate all tasks belong to user first
+    const taskCount = await prisma.task.count({
+      where: {
+        id: { in: taskIds },
+        tenantId,
+        userId,
+      },
+    })
+
+    if (taskCount !== taskIds.length) {
+      throw new Error("Some tasks not found or unauthorized")
+    }
+
+    // Perform batch delete
+    const result = await prisma.task.deleteMany({
+      where: {
+        id: { in: taskIds },
+        tenantId,
+        userId,
+      },
+    })
+
+    // Invalidate caches
+    await this.invalidateUserCaches(tenantId, userId)
+
+    return result
+  }
+}
