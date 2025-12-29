@@ -1,80 +1,135 @@
-import { prisma, ensureDatabaseConnection, checkDatabaseHealth } from './prisma';
+import { prisma, ensureDatabaseConnection, checkDatabaseHealth, cleanupConnectionPool } from './prisma';
 
-// Database connection utilities with enhanced retry logic and connection management
+// Database connection utilities with enhanced retry logic and connection pool management
 export class DatabaseConnection {
   private static readonly MAX_RETRIES = 3;
-  private static readonly TIMEOUT_MS = 8000; // Reduced to 8 seconds for faster failure
-  private static readonly RETRY_DELAY_MS = 500; // Reduced initial delay
+  private static readonly TIMEOUT_MS = 6000; // Reduced to 6 seconds for faster failure
+  private static readonly RETRY_DELAY_MS = 300; // Reduced initial delay
   private static readonly CONNECTION_CHECK_INTERVAL = 30000; // 30 seconds
   
   private static lastHealthCheck = 0;
   private static isHealthy = true;
+  private static operationQueue: Array<() => Promise<any>> = [];
+  private static isProcessingQueue = false;
 
   /**
-   * Execute a database operation with enhanced retry logic and connection management
+   * Execute a database operation with enhanced retry logic and connection pool management
    */
   static async withRetry<T>(
     operation: () => Promise<T>,
     operationName: string = 'database operation'
   ): Promise<T> {
-    // Ensure connection is established before operation
-    await this.ensureHealthyConnection();
-    
-    let lastError: Error | null = null;
+    // Queue operations to prevent connection pool exhaustion
+    return this.queueOperation(async () => {
+      // Ensure connection is established before operation
+      await this.ensureHealthyConnection();
+      
+      let lastError: Error | null = null;
 
-    for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
-      try {
-        // Add timeout to the operation with shorter timeout for faster failure
-        const result = await Promise.race([
-          operation(),
-          this.createTimeoutPromise<T>(operationName)
-        ]);
+      for (let attempt = 1; attempt <= this.MAX_RETRIES; attempt++) {
+        try {
+          // Add timeout to the operation with shorter timeout for faster failure
+          const result = await Promise.race([
+            operation(),
+            this.createTimeoutPromise<T>(operationName)
+          ]);
 
-        // Reset health status on successful operation
-        this.isHealthy = true;
-        return result;
-      } catch (error) {
-        lastError = error as Error;
-        
-        console.warn(`${operationName} attempt ${attempt}/${this.MAX_RETRIES} failed:`, {
-          error: error instanceof Error ? error.message : String(error),
-          code: (error as any)?.code,
-          meta: (error as any)?.meta
-        });
+          // Reset health status on successful operation
+          this.isHealthy = true;
+          return result;
+        } catch (error) {
+          lastError = error as Error;
+          
+          console.warn(`${operationName} attempt ${attempt}/${this.MAX_RETRIES} failed:`, {
+            error: error instanceof Error ? error.message : String(error),
+            code: (error as any)?.code,
+            meta: (error as any)?.meta
+          });
 
-        // Check if this is a connection-related error
-        if (this.isConnectionError(error)) {
-          this.isHealthy = false;
-          // Try to reconnect on connection errors
-          try {
-            await ensureDatabaseConnection();
-          } catch (reconnectError) {
-            console.warn('Failed to reconnect:', reconnectError);
+          // Check if this is a connection-related error
+          if (this.isConnectionError(error)) {
+            this.isHealthy = false;
+            // Clean up connection pool on connection errors
+            if (this.isPoolExhaustionError(error)) {
+              console.warn('Connection pool exhaustion detected, cleaning up...');
+              await cleanupConnectionPool();
+            }
+            // Try to reconnect on connection errors
+            try {
+              await ensureDatabaseConnection();
+            } catch (reconnectError) {
+              console.warn('Failed to reconnect:', reconnectError);
+            }
+          }
+
+          // Don't retry on certain types of errors
+          if (this.isNonRetryableError(error)) {
+            throw error;
+          }
+
+          // Wait before retrying (except on last attempt)
+          if (attempt < this.MAX_RETRIES) {
+            const delay = this.RETRY_DELAY_MS * Math.pow(2, attempt - 1); // Exponential backoff
+            await this.delay(delay);
           }
         }
-
-        // Don't retry on certain types of errors
-        if (this.isNonRetryableError(error)) {
-          throw error;
-        }
-
-        // Wait before retrying (except on last attempt)
-        if (attempt < this.MAX_RETRIES) {
-          const delay = this.RETRY_DELAY_MS * Math.pow(2, attempt - 1); // Exponential backoff
-          await this.delay(delay);
-        }
       }
-    }
 
-    // All retries failed
-    this.isHealthy = false;
-    throw new Error(`${operationName} failed after ${this.MAX_RETRIES} attempts. Last error: ${lastError?.message}`);
+      // All retries failed
+      this.isHealthy = false;
+      throw new Error(`${operationName} failed after ${this.MAX_RETRIES} attempts. Last error: ${lastError?.message}`);
+    });
   }
 
   /**
-   * Enhanced health check with caching
+   * Queue operations to prevent connection pool exhaustion
    */
-  static async healthCheck(): Promise<{ healthy: boolean; latency?: number; error?: string; cached?: boolean }> {
+  private static async queueOperation<T>(operation: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.operationQueue.push(async () => {
+        try {
+          const result = await operation();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      });
+      
+      this.processQueue();
+    });
+  }
+
+  /**
+   * Process queued operations with concurrency control
+   */
+  private static async processQueue(): Promise<void> {
+    if (this.isProcessingQueue || this.operationQueue.length === 0) {
+      return;
+    }
+    
+    this.isProcessingQueue = true;
+    
+    // Process operations with limited concurrency
+    const CONCURRENT_OPERATIONS = process.env.NODE_ENV === 'production' ? 3 : 5;
+    
+    while (this.operationQueue.length > 0) {
+      const batch = this.operationQueue.splice(0, CONCURRENT_OPERATIONS);
+      await Promise.all(batch.map(op => op().catch(console.error)));
+    }
+    
+    this.isProcessingQueue = false;
+  }
+
+  /**
+   * Enhanced health check with caching and connection pool monitoring
+   */
+  static async healthCheck(): Promise<{ 
+    healthy: boolean; 
+    latency?: number; 
+    error?: string; 
+    cached?: boolean;
+    connectionPool?: any;
+  }> {
     const now = Date.now();
     
     // Return cached result if recent
@@ -94,7 +149,8 @@ export class DatabaseConnection {
       return { 
         healthy: healthResult.healthy, 
         latency,
-        error: healthResult.error
+        error: healthResult.error,
+        connectionPool: healthResult.connectionPool
       };
     } catch (error) {
       this.isHealthy = false;
@@ -106,7 +162,7 @@ export class DatabaseConnection {
   }
 
   /**
-   * Ensure database connection is ready and healthy
+   * Ensure database connection is ready and healthy with connection pool management
    */
   static async ensureHealthyConnection(): Promise<void> {
     const health = await this.healthCheck();
@@ -137,9 +193,25 @@ export class DatabaseConnection {
       errorMessage.includes('econnrefused') ||
       errorMessage.includes('enotfound') ||
       errorMessage.includes('pool') ||
+      errorMessage.includes('maxclientsinssessionmode') ||
+      errorMessage.includes('max clients reached') ||
       errorCode === 'P1001' || // Can't reach database server
       errorCode === 'P1008' || // Operations timed out
       errorCode === 'P1017'    // Server has closed the connection
+    );
+  }
+
+  /**
+   * Check if error is specifically pool exhaustion
+   */
+  private static isPoolExhaustionError(error: any): boolean {
+    const errorMessage = error?.message?.toLowerCase() || '';
+    
+    return (
+      errorMessage.includes('maxclientsinssessionmode') ||
+      errorMessage.includes('max clients reached') ||
+      errorMessage.includes('connection pool exhausted') ||
+      errorMessage.includes('too many connections')
     );
   }
 
@@ -195,14 +267,27 @@ export class DatabaseConnection {
   }
 
   /**
-   * Get connection statistics
+   * Get connection statistics with enhanced pool monitoring
    */
   static getConnectionStats() {
     return {
       isHealthy: this.isHealthy,
       lastHealthCheck: this.lastHealthCheck,
-      timeSinceLastCheck: Date.now() - this.lastHealthCheck
+      timeSinceLastCheck: Date.now() - this.lastHealthCheck,
+      queueLength: this.operationQueue.length,
+      isProcessingQueue: this.isProcessingQueue
     };
+  }
+
+  /**
+   * Force cleanup of connection pool (emergency use)
+   */
+  static async forceCleanup(): Promise<void> {
+    console.log('Force cleaning up database connections...');
+    this.isHealthy = false;
+    this.operationQueue = [];
+    this.isProcessingQueue = false;
+    await cleanupConnectionPool();
   }
 }
 

@@ -1,65 +1,69 @@
-import { NextRequest, NextResponse } from "next/server"
-import { DatabaseConnection } from "@/lib/db-connection"
-import { checkDatabaseHealth } from "@/lib/prisma"
+import { NextRequest, NextResponse } from 'next/server';
+import { checkDatabaseHealth, getConnectionPoolStats } from '@/lib/prisma';
+import { DatabaseConnection } from '@/lib/db-connection';
 
-// Database health check endpoint
 export async function GET(request: NextRequest) {
   try {
-    const startTime = Date.now()
-    
-    // Perform comprehensive health check
-    const [basicHealth, connectionStats] = await Promise.all([
-      DatabaseConnection.healthCheck(),
-      Promise.resolve(DatabaseConnection.getConnectionStats())
-    ])
-    
-    const totalLatency = Date.now() - startTime
-    
-    // Additional connection test
-    let connectionTest: { success: boolean; error: string | null } = { success: false, error: null }
-    try {
-      await checkDatabaseHealth()
-      connectionTest.success = true
-    } catch (error) {
-      connectionTest.error = error instanceof Error ? error.message : 'Unknown error'
-    }
-    
-    const response = {
-      status: basicHealth.healthy && connectionTest.success ? 'healthy' : 'unhealthy',
+    // Get comprehensive database health information
+    const [dbHealth, poolStats, connectionStats] = await Promise.all([
+      checkDatabaseHealth(),
+      getConnectionPoolStats(),
+      DatabaseConnection.healthCheck()
+    ]);
+
+    const healthData = {
+      database: dbHealth,
+      connectionPool: poolStats,
+      connectionManager: {
+        ...connectionStats,
+        stats: DatabaseConnection.getConnectionStats()
+      },
       timestamp: new Date().toISOString(),
-      database: {
-        connected: basicHealth.healthy,
-        latency: basicHealth.latency || totalLatency,
-        cached: basicHealth.cached || false,
-        error: basicHealth.error || connectionTest.error
-      },
-      connection: {
-        isHealthy: connectionStats.isHealthy,
-        lastHealthCheck: new Date(connectionStats.lastHealthCheck).toISOString(),
-        timeSinceLastCheck: connectionStats.timeSinceLastCheck
-      },
-      environment: {
-        nodeEnv: process.env.NODE_ENV,
-        isVercel: !!process.env.VERCEL,
-        region: process.env.VERCEL_REGION || 'unknown'
-      }
-    }
-    
-    // Return appropriate status code
-    const statusCode = response.status === 'healthy' ? 200 : 503
-    
-    return NextResponse.json(response, { status: statusCode })
+      environment: process.env.NODE_ENV,
+      serverless: !!process.env.VERCEL
+    };
+
+    // Return appropriate status code based on health
+    const isHealthy = dbHealth.healthy && connectionStats.healthy;
+    const statusCode = isHealthy ? 200 : 503;
+
+    return NextResponse.json(healthData, { status: statusCode });
   } catch (error) {
-    console.error('Health check failed:', error)
+    console.error('Database health check failed:', error);
     
     return NextResponse.json({
-      status: 'error',
+      database: { healthy: false, error: 'Health check failed' },
+      connectionPool: { active: 0, max: 0, utilization: 0 },
       timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Health check failed',
-      database: {
-        connected: false,
-        error: 'Health check exception'
-      }
-    }, { status: 503 })
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 503 });
+  }
+}
+
+// Optional: Add a POST endpoint to force cleanup (for emergency use)
+export async function POST(request: NextRequest) {
+  try {
+    const { action } = await request.json();
+    
+    if (action === 'cleanup') {
+      await DatabaseConnection.forceCleanup();
+      
+      return NextResponse.json({
+        success: true,
+        message: 'Connection pool cleaned up successfully',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    return NextResponse.json({
+      error: 'Invalid action. Use "cleanup" to force connection pool cleanup.'
+    }, { status: 400 });
+  } catch (error) {
+    console.error('Database cleanup failed:', error);
+    
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Cleanup failed'
+    }, { status: 500 });
   }
 }
