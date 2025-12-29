@@ -832,7 +832,7 @@ export function PreferencesForm() {
                   onChange={(e) => handlePreferenceUpdate({ 
                     emailNotifications: {
                       summaryEnabled: e.target.checked,
-                      summaryFrequency: formData.emailNotifications?.summaryFrequency || "daily",
+                      summaryFrequency: (formData.emailNotifications?.summaryFrequency || "daily") as "daily" | "weekly",
                       remindersEnabled: formData.emailNotifications?.remindersEnabled || false,
                       defaultReminderDays: formData.emailNotifications?.defaultReminderDays || 1
                     }
@@ -885,7 +885,7 @@ export function PreferencesForm() {
                   onChange={(e) => handlePreferenceUpdate({ 
                     emailNotifications: {
                       summaryEnabled: formData.emailNotifications?.summaryEnabled || false,
-                      summaryFrequency: formData.emailNotifications?.summaryFrequency || "daily",
+                      summaryFrequency: (formData.emailNotifications?.summaryFrequency || "daily") as "daily" | "weekly",
                       remindersEnabled: e.target.checked,
                       defaultReminderDays: formData.emailNotifications?.defaultReminderDays || 1
                     }
@@ -906,7 +906,7 @@ export function PreferencesForm() {
                     onChange={(e) => handlePreferenceUpdate({ 
                       emailNotifications: {
                         summaryEnabled: formData.emailNotifications?.summaryEnabled || false,
-                        summaryFrequency: formData.emailNotifications?.summaryFrequency || "daily",
+                        summaryFrequency: (formData.emailNotifications?.summaryFrequency || "daily") as "daily" | "weekly",
                         remindersEnabled: formData.emailNotifications?.remindersEnabled || false,
                         defaultReminderDays: parseInt(e.target.value)
                       }

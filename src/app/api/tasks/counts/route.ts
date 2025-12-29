@@ -53,7 +53,8 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
     // Clean up old cache entries periodically
     if (Math.random() < 0.1) { // 10% chance
       const cutoff = now - CACHE_DURATION * 2
-      for (const [key, value] of countsCache.entries()) {
+      const entries = Array.from(countsCache.entries())
+      for (const [key, value] of entries) {
         if (value.timestamp < cutoff) {
           countsCache.delete(key)
         }
