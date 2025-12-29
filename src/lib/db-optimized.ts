@@ -56,9 +56,10 @@ export class OptimizedDbService {
 
       // Get date-based counts in a separate optimized query
       const now = new Date()
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      const tomorrow = new Date(today)
-      tomorrow.setDate(tomorrow.getDate() + 1)
+      // Use UTC dates to avoid timezone issues
+      const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+      const tomorrowUTC = new Date(todayUTC)
+      tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1)
 
       const [overdue, todayTasks, upcoming] = await Promise.all([
         withDatabaseRetry(
@@ -67,7 +68,7 @@ export class OptimizedDbService {
               tenantId,
               userId,
               status: "active",
-              dueDate: { lt: today },
+              dueDate: { lt: todayUTC },
             },
           }),
           'getTaskCounts-overdue'
@@ -78,7 +79,7 @@ export class OptimizedDbService {
               tenantId,
               userId,
               status: "active",
-              dueDate: { gte: today, lt: tomorrow },
+              dueDate: { gte: todayUTC, lt: tomorrowUTC },
             },
           }),
           'getTaskCounts-today'
@@ -90,8 +91,8 @@ export class OptimizedDbService {
               userId,
               status: "active",
               dueDate: { 
-                gte: tomorrow,
-                lt: new Date(tomorrow.getTime() + 7 * 24 * 60 * 60 * 1000) // 7 days from tomorrow
+                gte: tomorrowUTC,
+                lt: new Date(tomorrowUTC.getTime() + 7 * 24 * 60 * 60 * 1000) // 7 days from tomorrow
               },
             },
           }),
@@ -272,22 +273,23 @@ export class OptimizedDbService {
     // Handle date filters
     if (dueDate) {
       const now = new Date()
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      const tomorrow = new Date(today)
-      tomorrow.setDate(tomorrow.getDate() + 1)
+      // Use UTC dates to avoid timezone issues
+      const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+      const tomorrowUTC = new Date(todayUTC)
+      tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1)
 
       switch (dueDate) {
         case "today":
-          where.dueDate = { gte: today, lt: tomorrow }
+          where.dueDate = { gte: todayUTC, lt: tomorrowUTC }
           break
         case "overdue":
-          where.dueDate = { lt: today }
+          where.dueDate = { lt: todayUTC }
           break
         case "upcoming":
           // Match the logic from /api/tasks/upcoming - next 7 days
-          const futureDate = new Date(tomorrow)
-          futureDate.setDate(futureDate.getDate() + 7)
-          where.dueDate = { gte: tomorrow, lt: futureDate }
+          const futureDate = new Date(tomorrowUTC)
+          futureDate.setUTCDate(futureDate.getUTCDate() + 7)
+          where.dueDate = { gte: tomorrowUTC, lt: futureDate }
           break
         case "no-due-date":
           where.dueDate = null

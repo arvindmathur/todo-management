@@ -80,10 +80,12 @@ export function isTaskOverdue(task: Task): boolean {
   
   const now = new Date()
   const dueDate = new Date(task.dueDate)
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const taskDueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
   
-  return taskDueDate < today
+  // Use UTC dates to avoid timezone issues
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const taskDueDateUTC = new Date(Date.UTC(dueDate.getUTCFullYear(), dueDate.getUTCMonth(), dueDate.getUTCDate()))
+  
+  return taskDueDateUTC < todayUTC
 }
 
 export function isTaskDueToday(task: Task): boolean {
@@ -91,10 +93,14 @@ export function isTaskDueToday(task: Task): boolean {
   
   const now = new Date()
   const dueDate = new Date(task.dueDate)
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const taskDueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
   
-  return taskDueDate.getTime() === today.getTime()
+  // Use UTC dates to avoid timezone issues
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const tomorrowUTC = new Date(todayUTC)
+  tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1)
+  const taskDueDateUTC = new Date(Date.UTC(dueDate.getUTCFullYear(), dueDate.getUTCMonth(), dueDate.getUTCDate()))
+  
+  return taskDueDateUTC >= todayUTC && taskDueDateUTC < tomorrowUTC
 }
 
 export function isTaskUpcoming(task: Task): boolean {
