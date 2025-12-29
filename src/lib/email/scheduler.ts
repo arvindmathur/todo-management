@@ -194,7 +194,7 @@ export class NotificationScheduler {
   }>> {
     const now = new Date();
 
-    return await prisma.emailNotification.findMany({
+    const notifications = await prisma.emailNotification.findMany({
       where: {
         status: 'pending',
         scheduledFor: {
@@ -217,6 +217,24 @@ export class NotificationScheduler {
       },
       take: limit
     });
+
+    // Transform the result to match the expected type
+    return notifications.map(notification => ({
+      id: notification.id,
+      tenantId: notification.tenantId,
+      userId: notification.userId,
+      type: notification.type as 'summary' | 'reminder',
+      frequency: notification.frequency || undefined,
+      taskId: notification.taskId || undefined,
+      scheduledFor: notification.scheduledFor,
+      user: {
+        name: notification.user.name,
+        email: notification.user.email,
+        preferences: notification.user.preferences,
+        timezone: undefined // Will be extracted from preferences if needed
+      },
+      task: notification.task || undefined
+    }));
   }
 
   /**
