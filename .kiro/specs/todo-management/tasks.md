@@ -95,6 +95,37 @@ This implementation plan breaks down the todo management SaaS application into d
   - Ensure all tests pass, ask the user if questions arise.
   - **COMPLETED**: Fixed overdue date logic issue where tasks due today were incorrectly showing as overdue in frontend display
 
+- [ ] 6.5. Excel-like Task Editing Experience
+  - [x] 6.5.1 Implement click-to-edit for task title
+    - Make task title clickable anywhere to enter edit mode
+    - Add inline editing with auto-save on blur/enter
+    - Support mobile long-press for touch devices
+    - _Requirements: 1.3 (task editing), UX improvement_
+
+  - [ ] 6.5.2 Implement click-to-edit for due date
+    - Make due date clickable to show date picker
+    - Support quick date selection (today, tomorrow, next week)
+    - Auto-save changes immediately
+    - _Requirements: 2.1 (due date assignment), UX improvement_
+
+  - [ ] 6.5.3 Implement click-to-edit for priority
+    - Make priority badge clickable to cycle through priorities
+    - Show visual feedback during priority changes
+    - Auto-save priority changes
+    - _Requirements: 2.2 (priority assignment), UX improvement_
+
+  - [ ] 6.5.4 Add mobile-optimized touch interactions
+    - Implement long-press detection for mobile devices
+    - Optimize touch targets for mobile editing
+    - Add haptic feedback where supported
+    - _Requirements: Mobile UX improvement_
+
+  - [ ] 6.5.5 Enhance visual feedback and accessibility
+    - Add hover states and visual cues for editable fields
+    - Implement keyboard navigation support
+    - Add loading states for auto-save operations
+    - _Requirements: Accessibility and UX improvement_
+
 - [x] 7. GTD Infrastructure - Projects and Contexts
   - [x] 7.1 Implement project management API
     - Create project CRUD operations

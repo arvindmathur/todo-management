@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import { Task, TaskPriority } from "@/types/task"
 import { TaskEditForm } from "./TaskEditForm"
 import { LoadingButton } from "@/components/feedback"
@@ -38,9 +38,29 @@ export function TaskItem({
   onReopen,
 }: TaskItemProps) {
   const [isEditing, setIsEditing] = useState(false)
+  const [isEditingTitle, setIsEditingTitle] = useState(false)
+  const [editingTitle, setEditingTitle] = useState(task.title)
+  const [isSavingTitle, setIsSavingTitle] = useState(false)
+  
+  const titleInputRef = useRef<HTMLInputElement>(null)
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
+  
   const { handleError } = useErrorHandling()
   const { isLoading, startLoading, stopLoading } = useLoadingState()
   const showSuccess = useSuccessToast()
+
+  // Focus input when entering edit mode
+  useEffect(() => {
+    if (isEditingTitle && titleInputRef.current) {
+      titleInputRef.current.focus()
+      titleInputRef.current.select()
+    }
+  }, [isEditingTitle])
+
+  // Reset editing title when task title changes
+  useEffect(() => {
+    setEditingTitle(task.title)
+  }, [task.title])
 
   const handleComplete = async () => {
     startLoading()
@@ -87,6 +107,72 @@ export function TaskItem({
       return { success: false }
     } finally {
       stopLoading()
+    }
+  }
+
+  // Handle title editing
+  const handleTitleClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!isEditingTitle && !isLoading && task.status !== "completed") {
+      setIsEditingTitle(true)
+    }
+  }
+
+  const handleTitleSave = async () => {
+    if (editingTitle.trim() === task.title || !editingTitle.trim()) {
+      setIsEditingTitle(false)
+      setEditingTitle(task.title)
+      return
+    }
+
+    setIsSavingTitle(true)
+    try {
+      const result = await onUpdate(task.id, { title: editingTitle.trim() })
+      if (result.success) {
+        setIsEditingTitle(false)
+        showSuccess("Title Updated", "Task title has been updated")
+      } else {
+        setEditingTitle(task.title)
+      }
+    } catch (error) {
+      await handleError(error, "Title update")
+      setEditingTitle(task.title)
+    } finally {
+      setIsSavingTitle(false)
+    }
+  }
+
+  const handleTitleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      handleTitleSave()
+    } else if (e.key === "Escape") {
+      setIsEditingTitle(false)
+      setEditingTitle(task.title)
+    }
+  }
+
+  const handleTitleBlur = () => {
+    handleTitleSave()
+  }
+
+  // Handle long press for mobile
+  const handleTouchStart = (e: React.TouchEvent) => {
+    longPressTimerRef.current = setTimeout(() => {
+      if (!isEditingTitle && !isLoading && task.status !== "completed") {
+        setIsEditingTitle(true)
+        // Add haptic feedback if supported
+        if (navigator.vibrate) {
+          navigator.vibrate(50)
+        }
+      }
+    }, 500) // 500ms long press
+  }
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
     }
   }
 
@@ -163,11 +249,45 @@ export function TaskItem({
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <div className="flex items-center">
-                <h3 className={`text-sm font-medium text-gray-900 ${
-                  task.status === "completed" ? "line-through" : ""
-                }`}>
-                  {task.title}
-                </h3>
+                {/* Editable task title */}
+                {isEditingTitle ? (
+                  <div className="flex-1 relative">
+                    <input
+                      ref={titleInputRef}
+                      type="text"
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onKeyDown={handleTitleKeyDown}
+                      onBlur={handleTitleBlur}
+                      disabled={isSavingTitle}
+                      className={`w-full text-sm font-medium bg-white border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        isSavingTitle ? "opacity-50 cursor-not-allowed" : ""
+                      }`}
+                      placeholder="Enter task title..."
+                    />
+                    {isSavingTitle && (
+                      <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <h3 
+                    className={`text-sm font-medium cursor-pointer hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors ${
+                      task.status === "completed" 
+                        ? "line-through text-gray-500" 
+                        : "text-gray-900 hover:text-blue-600"
+                    } ${
+                      task.status !== "completed" ? "hover:shadow-sm" : ""
+                    }`}
+                    onClick={handleTitleClick}
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                    title={task.status !== "completed" ? "Click to edit title" : ""}
+                  >
+                    {task.title}
+                  </h3>
+                )}
                 {isOverdue && (
                   <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                     Overdue
@@ -189,7 +309,7 @@ export function TaskItem({
                 onClick={() => setIsEditing(true)}
                 disabled={isLoading}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
-                title="Edit task"
+                title="Edit all fields"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
