@@ -119,12 +119,26 @@ export async function POST(
           }
         }
 
+        // Validate that taskData is provided for task conversion
+        if (!validatedData.taskData) {
+          return NextResponse.json(
+            { error: "Task data is required for task conversion" },
+            { status: 400 }
+          )
+        }
+
         // Create task
         const task = await DatabaseConnection.withRetry(
           () => prisma.task.create({
             data: {
-              ...validatedData.taskData,
-              dueDate: validatedData.taskData.dueDate ? new Date(validatedData.taskData.dueDate) : null,
+              title: validatedData.taskData!.title,
+              description: validatedData.taskData!.description,
+              priority: validatedData.taskData!.priority,
+              dueDate: validatedData.taskData!.dueDate ? new Date(validatedData.taskData!.dueDate) : null,
+              projectId: validatedData.taskData!.projectId,
+              contextId: validatedData.taskData!.contextId,
+              areaId: validatedData.taskData!.areaId,
+              tags: validatedData.taskData!.tags,
               userId: session.user.id,
               tenantId: session.user.tenantId,
             },
@@ -171,10 +185,14 @@ export async function POST(
         }
 
         // Create project
+        const projectData = validatedData.projectData!
         const project = await DatabaseConnection.withRetry(
           () => prisma.project.create({
             data: {
-              ...validatedData.projectData,
+              name: projectData.name!,
+              description: projectData.description,
+              areaId: projectData.areaId,
+              outcome: projectData.outcome,
               userId: session.user.id,
               tenantId: session.user.tenantId,
             },
@@ -211,7 +229,7 @@ export async function POST(
     }
 
     // Mark inbox item as processed and handle deletion/count in parallel
-    const operations = [
+    const operations: Promise<any>[] = [
       DatabaseConnection.withRetry(
         () => prisma.inboxItem.update({
           where: { id: params.id },
@@ -237,22 +255,21 @@ export async function POST(
     }
 
     // Always get updated count
-    operations.push(
-      DatabaseConnection.withRetry(
-        () => prisma.inboxItem.count({
-          where: {
-            userId: session.user.id,
-            tenantId: session.user.tenantId,
-            processed: false,
-          }
-        }),
-        'count-unprocessed-after-process'
-      )
+    const countPromise = DatabaseConnection.withRetry(
+      () => prisma.inboxItem.count({
+        where: {
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+          processed: false,
+        }
+      }),
+      'count-unprocessed-after-process'
     )
 
-    const results = await Promise.all(operations)
-    const processedItem = validatedData.action !== "delete" ? results[0] : null
-    const unprocessedCount = results[results.length - 1] as number
+    const [processedItem, deletedItem, unprocessedCount] = await Promise.all([
+      ...operations,
+      countPromise
+    ])
 
     return NextResponse.json({
       message: "Inbox item processed successfully",

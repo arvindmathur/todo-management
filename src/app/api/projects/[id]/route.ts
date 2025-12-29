@@ -173,7 +173,7 @@ export async function PUT(
       const task = await DatabaseConnection.withRetry(
         () => prisma.task.findFirst({
           where: {
-            id: validatedData.nextActionId,
+            id: validatedData.nextActionId!,
             projectId: params.id,
             userId: session.user.id,
             tenantId: session.user.tenantId,

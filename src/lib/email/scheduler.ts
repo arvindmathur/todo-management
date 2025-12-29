@@ -207,6 +207,7 @@ export class NotificationScheduler {
   }>> {
     const now = new Date();
 
+    // First get the notifications
     const notifications = await DatabaseConnection.withRetry(
       () => prisma.emailNotification.findMany({
         where: {
@@ -222,9 +223,7 @@ export class NotificationScheduler {
               email: true,
               preferences: true
             }
-          },
-          // Include task details for reminder emails
-          ...(await this.getTaskInclude())
+          }
         },
         orderBy: {
           scheduledFor: 'asc'
@@ -233,6 +232,40 @@ export class NotificationScheduler {
       }),
       'get-pending-notifications'
     );
+
+    // Get task details for reminder notifications
+    const taskIds = notifications
+      .filter(n => n.type === 'reminder' && n.taskId)
+      .map(n => n.taskId!)
+      .filter((id, index, arr) => arr.indexOf(id) === index); // Remove duplicates
+
+    const tasks = taskIds.length > 0 ? await DatabaseConnection.withRetry(
+      () => prisma.task.findMany({
+        where: {
+          id: { in: taskIds }
+        },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          priority: true,
+          dueDate: true,
+          project: {
+            select: { name: true }
+          },
+          context: {
+            select: { name: true }
+          },
+          area: {
+            select: { name: true }
+          }
+        }
+      }),
+      'get-reminder-tasks'
+    ) : [];
+
+    // Create a map for quick task lookup
+    const taskMap = new Map(tasks.map(task => [task.id, task]));
 
     // Transform the result to match the expected type
     return notifications.map(notification => ({
@@ -249,7 +282,7 @@ export class NotificationScheduler {
         preferences: notification.user.preferences,
         timezone: undefined // Will be extracted from preferences if needed
       },
-      task: notification.task || undefined
+      task: notification.taskId ? taskMap.get(notification.taskId) || null : null
     }));
   }
 
@@ -311,33 +344,6 @@ export class NotificationScheduler {
   }
 
   /**
-   * Get task include configuration for Prisma queries
-   */
-  private static async getTaskInclude() {
-    // This is a workaround for dynamic includes in Prisma
-    return {
-      task: {
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          priority: true,
-          dueDate: true,
-          project: {
-            select: { name: true }
-          },
-          context: {
-            select: { name: true }
-          },
-          area: {
-            select: { name: true }
-          }
-        }
-      }
-    };
-  }
-
-  /**
    * Clean up old notifications (completed, failed, cancelled)
    */
   static async cleanupOldNotifications(daysOld: number = 30): Promise<number> {
@@ -377,15 +383,30 @@ export class NotificationScheduler {
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const [pending, sent, failed, cancelled, totalToday] = await Promise.all([
-      prisma.emailNotification.count({ where: { status: 'pending' } }),
-      prisma.emailNotification.count({ where: { status: 'sent' } }),
-      prisma.emailNotification.count({ where: { status: 'failed' } }),
-      prisma.emailNotification.count({ where: { status: 'cancelled' } }),
-      prisma.emailNotification.count({
-        where: {
-          createdAt: { gte: today, lt: tomorrow }
-        }
-      })
+      DatabaseConnection.withRetry(
+        () => prisma.emailNotification.count({ where: { status: 'pending' } }),
+        'count-pending-notifications'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.emailNotification.count({ where: { status: 'sent' } }),
+        'count-sent-notifications'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.emailNotification.count({ where: { status: 'failed' } }),
+        'count-failed-notifications'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.emailNotification.count({ where: { status: 'cancelled' } }),
+        'count-cancelled-notifications'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.emailNotification.count({
+          where: {
+            createdAt: { gte: today, lt: tomorrow }
+          }
+        }),
+        'count-todays-notifications'
+      )
     ]);
 
     const total = sent + failed;
