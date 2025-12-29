@@ -200,15 +200,14 @@ export default function Dashboard() {
             isLoading={loading}
           />
 
-          {/* Filters */}
-          <div className="mb-6">
-            <TaskFiltersComponent
-              filters={filters}
-              onFiltersChange={updateFilters}
-              onClearFilters={clearFilters}
-              isLoading={loading}
-            />
-          </div>
+          {/* Collapsible Additional Filters */}
+          <CollapsibleFilters
+            isOpen={showAdditionalFilters}
+            filters={filters}
+            onFiltersChange={updateFilters}
+            onClearFilters={clearFilters}
+            isLoading={loading}
+          />
 
           {/* Results summary */}
           {!loading && (

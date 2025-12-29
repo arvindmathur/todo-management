@@ -125,4 +125,3 @@ export const TaskViewTabs = React.memo(function TaskViewTabs({
     </div>
   )
 })
-}

@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     const totalLatency = Date.now() - startTime
     
     // Additional connection test
-    let connectionTest = { success: false, error: null }
+    let connectionTest: { success: boolean; error: string | null } = { success: false, error: null }
     try {
       await checkDatabaseHealth()
       connectionTest.success = true

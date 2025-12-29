@@ -159,4 +159,3 @@ export const CollapsibleFilters = React.memo(function CollapsibleFilters({
     </div>
   )
 })
-}
