@@ -1,8 +1,12 @@
 "use client"
 
+import { useMemo } from "react"
 import { Task } from "@/types/task"
 import { TaskItem } from "./TaskItem"
 import { InlineTaskCreator } from "./InlineTaskCreator"
+import { useUserPreferences } from "@/hooks/useUserPreferences"
+import { sortTasks, DEFAULT_SORT_CONFIG } from "@/lib/taskSorting"
+import { DEFAULT_PREFERENCES } from "@/lib/preferences"
 
 interface TaskListProps {
   tasks: Task[]
@@ -27,6 +31,13 @@ export function TaskList({
   onTaskCreate,
   onTaskCreated,
 }: TaskListProps) {
+  const { preferencesData } = useUserPreferences()
+  
+  // Sort tasks based on user preferences
+  const sortedTasks = useMemo(() => {
+    const sortConfig = preferencesData?.preferences?.taskSorting || DEFAULT_SORT_CONFIG
+    return sortTasks(tasks, sortConfig)
+  }, [tasks, preferencesData?.preferences?.taskSorting])
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -58,7 +69,7 @@ export function TaskList({
 
   if (tasks.length === 0 && !loading) {
     return (
-      <div className="space-y-2">
+      <div className="space-y-1">
         {/* Inline Task Creator */}
         {onTaskCreate && (
           <InlineTaskCreator
@@ -90,7 +101,7 @@ export function TaskList({
   }
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-1">
       {/* Inline Task Creator */}
       {onTaskCreate && (
         <InlineTaskCreator
@@ -101,7 +112,7 @@ export function TaskList({
       )}
       
       {/* Task Items */}
-      {tasks.map((task) => (
+      {sortedTasks.map((task) => (
         <TaskItem
           key={task.id}
           task={task}

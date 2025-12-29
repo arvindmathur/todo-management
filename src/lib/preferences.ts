@@ -8,6 +8,15 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
     email: true,
     browser: true,
     weeklyReview: true
+  },
+  taskDefaults: {
+    priority: "medium",
+    dueDate: "today"
+  },
+  taskSorting: {
+    primary: "priority",
+    secondary: "dueDate", 
+    tertiary: "title"
   }
 }
 

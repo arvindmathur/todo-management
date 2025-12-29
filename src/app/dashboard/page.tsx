@@ -15,7 +15,7 @@ import VersionDisplay from "@/components/ui/VersionDisplay"
 export default function Dashboard() {
   const { data: session, status } = useSession()
   const router = useRouter()
-  const [activeView, setActiveView] = useState("all")
+  const [activeView, setActiveView] = useState("focus")
   const [showAdditionalFilters, setShowAdditionalFilters] = useState(false)
   const [taskCounts, setTaskCounts] = useState({
     all: 0,
@@ -190,15 +190,6 @@ export default function Dashboard() {
               filters={filters}
             />
           </div>
-
-          {/* Collapsible Additional Filters */}
-          <CollapsibleFilters
-            isOpen={showAdditionalFilters}
-            filters={filters}
-            onFiltersChange={updateFilters}
-            onClearFilters={clearFilters}
-            isLoading={loading}
-          />
 
           {/* Collapsible Additional Filters */}
           <CollapsibleFilters

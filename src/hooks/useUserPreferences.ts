@@ -13,6 +13,15 @@ export interface UserPreferences {
     weeklyReview: boolean
   }
   gtdOnboardingCompleted?: boolean
+  taskDefaults?: {
+    priority: "urgent" | "high" | "medium" | "low"
+    dueDate: "today" | "tomorrow" | "none"
+  }
+  taskSorting?: {
+    primary: "priority" | "dueDate" | "title" | "created"
+    secondary: "priority" | "dueDate" | "title" | "created"
+    tertiary: "priority" | "dueDate" | "title" | "created"
+  }
 }
 
 export interface PreferencesData {

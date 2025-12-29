@@ -33,17 +33,17 @@ export const TaskViewTabs = React.memo(function TaskViewTabs({
   )
   const views = [
     {
-      id: "all",
-      label: "All Tasks",
-      filters: { status: "active" as const },
-      count: taskCounts?.all,
-    },
-    {
       id: "focus",
       label: "Focus",
       filters: { status: "active" as const, dueDate: "focus" as const },
       count: taskCounts?.focus,
       tooltip: "Shows overdue and today's tasks for immediate attention",
+    },
+    {
+      id: "all",
+      label: "All Tasks",
+      filters: { status: "active" as const },
+      count: taskCounts?.all,
     },
     {
       id: "today",

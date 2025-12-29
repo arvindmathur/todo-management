@@ -256,6 +256,148 @@ export function PreferencesForm() {
           </div>
         </div>
 
+        {/* Task Defaults */}
+        <div className="bg-white shadow rounded-lg p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Task Defaults</h3>
+          
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="default-priority" className="block text-sm font-medium text-gray-700 mb-2">
+                Default Priority
+              </label>
+              <select
+                id="default-priority"
+                value={formData.taskDefaults?.priority || "medium"}
+                onChange={(e) => handlePreferenceUpdate({ 
+                  taskDefaults: {
+                    priority: e.target.value as "urgent" | "high" | "medium" | "low",
+                    dueDate: formData.taskDefaults?.dueDate || "today"
+                  }
+                })}
+                disabled={isUpdating}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="urgent">Urgent</option>
+              </select>
+              <p className="mt-2 text-sm text-gray-500">
+                Default priority for new tasks created via inline creator.
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="default-due-date" className="block text-sm font-medium text-gray-700 mb-2">
+                Default Due Date
+              </label>
+              <select
+                id="default-due-date"
+                value={formData.taskDefaults?.dueDate || "today"}
+                onChange={(e) => handlePreferenceUpdate({ 
+                  taskDefaults: {
+                    priority: formData.taskDefaults?.priority || "medium",
+                    dueDate: e.target.value as "today" | "tomorrow" | "none"
+                  }
+                })}
+                disabled={isUpdating}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+              >
+                <option value="none">No due date</option>
+                <option value="today">Today</option>
+                <option value="tomorrow">Tomorrow</option>
+              </select>
+              <p className="mt-2 text-sm text-gray-500">
+                Default due date for new tasks created via inline creator.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Task Sorting */}
+        <div className="bg-white shadow rounded-lg p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Task Sorting</h3>
+          
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="primary-sort" className="block text-sm font-medium text-gray-700 mb-2">
+                Primary Sort
+              </label>
+              <select
+                id="primary-sort"
+                value={formData.taskSorting?.primary || "priority"}
+                onChange={(e) => handlePreferenceUpdate({ 
+                  taskSorting: {
+                    primary: e.target.value as "priority" | "dueDate" | "title" | "created",
+                    secondary: formData.taskSorting?.secondary || "dueDate",
+                    tertiary: formData.taskSorting?.tertiary || "title"
+                  }
+                })}
+                disabled={isUpdating}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+              >
+                <option value="priority">Priority</option>
+                <option value="dueDate">Due Date</option>
+                <option value="title">Title</option>
+                <option value="created">Created Date</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="secondary-sort" className="block text-sm font-medium text-gray-700 mb-2">
+                Secondary Sort
+              </label>
+              <select
+                id="secondary-sort"
+                value={formData.taskSorting?.secondary || "dueDate"}
+                onChange={(e) => handlePreferenceUpdate({ 
+                  taskSorting: {
+                    primary: formData.taskSorting?.primary || "priority",
+                    secondary: e.target.value as "priority" | "dueDate" | "title" | "created",
+                    tertiary: formData.taskSorting?.tertiary || "title"
+                  }
+                })}
+                disabled={isUpdating}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+              >
+                <option value="priority">Priority</option>
+                <option value="dueDate">Due Date</option>
+                <option value="title">Title</option>
+                <option value="created">Created Date</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="tertiary-sort" className="block text-sm font-medium text-gray-700 mb-2">
+                Tertiary Sort
+              </label>
+              <select
+                id="tertiary-sort"
+                value={formData.taskSorting?.tertiary || "title"}
+                onChange={(e) => handlePreferenceUpdate({ 
+                  taskSorting: {
+                    primary: formData.taskSorting?.primary || "priority",
+                    secondary: formData.taskSorting?.secondary || "dueDate",
+                    tertiary: e.target.value as "priority" | "dueDate" | "title" | "created"
+                  }
+                })}
+                disabled={isUpdating}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+              >
+                <option value="priority">Priority</option>
+                <option value="dueDate">Due Date</option>
+                <option value="title">Title</option>
+                <option value="created">Created Date</option>
+              </select>
+            </div>
+
+            <p className="text-sm text-gray-500">
+              Tasks are sorted by the primary field first, then secondary, then tertiary. 
+              Default: Priority (higher first) → Due Date (earlier first) → Title (alphabetical).
+            </p>
+          </div>
+        </div>
+
         {/* Notifications */}
         <div className="bg-white shadow rounded-lg p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Notifications</h3>

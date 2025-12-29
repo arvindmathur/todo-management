@@ -20,6 +20,16 @@ const preferencesSchema = z.object({
   }).optional(),
   gtdEnabled: z.boolean().optional(),
   gtdOnboardingCompleted: z.boolean().optional(),
+  // New task preferences
+  taskDefaults: z.object({
+    priority: z.enum(["urgent", "high", "medium", "low"]).optional(),
+    dueDate: z.enum(["today", "tomorrow", "none"]).optional(),
+  }).optional(),
+  taskSorting: z.object({
+    primary: z.enum(["priority", "dueDate", "title", "created"]).optional(),
+    secondary: z.enum(["priority", "dueDate", "title", "created"]).optional(),
+    tertiary: z.enum(["priority", "dueDate", "title", "created"]).optional(),
+  }).optional(),
 })
 
 // Get user preferences
@@ -116,6 +126,18 @@ export async function PUT(request: NextRequest) {
     }
     if (validatedData.gtdOnboardingCompleted !== undefined) {
       updatedPreferences.gtdOnboardingCompleted = validatedData.gtdOnboardingCompleted
+    }
+    if (validatedData.taskDefaults !== undefined) {
+      updatedPreferences.taskDefaults = {
+        ...updatedPreferences.taskDefaults,
+        ...validatedData.taskDefaults
+      }
+    }
+    if (validatedData.taskSorting !== undefined) {
+      updatedPreferences.taskSorting = {
+        ...updatedPreferences.taskSorting,
+        ...validatedData.taskSorting
+      }
     }
 
     // Prepare update data

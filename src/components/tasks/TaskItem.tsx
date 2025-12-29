@@ -369,7 +369,7 @@ export function TaskItem({
   }
 
   return (
-    <div className={`bg-white rounded-lg border p-4 hover:shadow-md transition-shadow ${
+    <div className={`bg-white rounded-lg border p-2 sm:p-3 hover:shadow-md transition-shadow ${
       task.status === "completed" ? "opacity-75" : ""
     } ${
       isOverdue ? "border-red-200 bg-red-50" : ""

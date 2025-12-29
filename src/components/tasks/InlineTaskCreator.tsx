@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react"
 import { TaskPriority, CreateTaskRequest } from "@/types/task"
+import { useUserPreferences } from "@/hooks/useUserPreferences"
+import { DEFAULT_PREFERENCES } from "@/lib/preferences"
 
 interface InlineTaskCreatorProps {
   onTaskCreate: (taskData: CreateTaskRequest) => Promise<any>
@@ -10,13 +12,34 @@ interface InlineTaskCreatorProps {
 }
 
 export function InlineTaskCreator({ onTaskCreate, isLoading, onTaskCreated }: InlineTaskCreatorProps) {
+  const { preferencesData } = useUserPreferences()
+  
+  // Get default values from preferences
+  const defaultPriority = preferencesData?.preferences?.taskDefaults?.priority || DEFAULT_PREFERENCES.taskDefaults?.priority || "medium"
+  const defaultDueDate = preferencesData?.preferences?.taskDefaults?.dueDate || DEFAULT_PREFERENCES.taskDefaults?.dueDate || "today"
+  
   const [isEditing, setIsEditing] = useState(false)
   const [title, setTitle] = useState("")
-  const [priority, setPriority] = useState<TaskPriority>("medium")
+  const [priority, setPriority] = useState<TaskPriority>(defaultPriority)
   const [dueDate, setDueDate] = useState<string>("")
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const titleInputRef = useRef<HTMLInputElement>(null)
+
+  // Set default due date when editing starts
+  useEffect(() => {
+    if (isEditing && !dueDate) {
+      const today = new Date()
+      if (defaultDueDate === "today") {
+        setDueDate(today.toISOString().split('T')[0])
+      } else if (defaultDueDate === "tomorrow") {
+        const tomorrow = new Date(today)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        setDueDate(tomorrow.toISOString().split('T')[0])
+      }
+      // "none" means no default due date
+    }
+  }, [isEditing, defaultDueDate, dueDate])
 
   // Focus input when entering edit mode
   useEffect(() => {
@@ -72,9 +95,9 @@ export function InlineTaskCreator({ onTaskCreate, isLoading, onTaskCreated }: In
 
       const result = await onTaskCreate(taskData)
       if (result.success) {
-        // Reset form
+        // Reset form to defaults
         setTitle("")
-        setPriority("medium")
+        setPriority(defaultPriority)
         setDueDate("")
         setIsEditing(false)
         setError(null)
@@ -140,7 +163,7 @@ export function InlineTaskCreator({ onTaskCreate, isLoading, onTaskCreated }: In
   return (
     <div className="space-y-2">
       <div className="bg-white rounded-lg border border-dashed border-gray-300 hover:border-gray-400 transition-colors">
-        <div className="p-3 sm:p-4">
+        <div className="p-2 sm:p-3">
           <div className="flex items-center space-x-2 sm:space-x-4">
             {/* Checkbox placeholder */}
             <div className="w-4 h-4 border-2 border-gray-300 rounded flex-shrink-0"></div>
@@ -190,35 +213,31 @@ export function InlineTaskCreator({ onTaskCreate, isLoading, onTaskCreated }: In
 
             {/* Due date selector */}
             <div onClick={handleDueDateClick} className="min-w-[80px] sm:min-w-[100px] flex-shrink-0">
-              {dueDate ? (
-                <div className="flex items-center space-x-1">
-                  <span className="text-xs text-gray-600 truncate">{formatDueDate(dueDate)}</span>
+              <div className="relative">
+                <label htmlFor="inline-due-date" className="sr-only">Due date</label>
+                <input
+                  id="inline-due-date"
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="text-xs text-gray-500 border-none outline-none bg-transparent cursor-pointer w-full"
+                  disabled={isLoading || isCreating}
+                  aria-label="Task due date"
+                />
+                {dueDate && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
                       setDueDate("")
                     }}
-                    className="text-xs text-gray-400 hover:text-gray-600 flex-shrink-0"
+                    className="absolute right-0 top-0 text-xs text-gray-400 hover:text-gray-600 flex-shrink-0 h-full px-1"
                     disabled={isLoading || isCreating}
                     aria-label="Clear due date"
                   >
                     ×
                   </button>
-                </div>
-              ) : (
-                <>
-                  <label htmlFor="inline-due-date" className="sr-only">Due date</label>
-                  <input
-                    id="inline-due-date"
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="text-xs text-gray-500 border-none outline-none bg-transparent cursor-pointer w-full"
-                    disabled={isLoading || isCreating}
-                    aria-label="Task due date"
-                  />
-                </>
-              )}
+                )}
+              </div>
             </div>
 
             {/* Loading indicator */}
