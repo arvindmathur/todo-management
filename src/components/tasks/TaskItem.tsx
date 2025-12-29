@@ -279,7 +279,6 @@ export function TaskItem({
     const date = new Date()
     date.setDate(date.getDate() + days)
     const dateString = getDateInputValue(date, userTimezone)
-    setEditingDueDate(dateString)
     
     // Create date in user's timezone to avoid timezone conversion issues
     const newDueDate = createDateInTimezone(dateString, userTimezone)
@@ -290,9 +289,14 @@ export function TaskItem({
       if (result.success) {
         setIsEditingDueDate(false)
         showSuccess("Due Date Updated", "Task due date has been updated")
+      } else {
+        // Reset to current value on failure
+        setEditingDueDate(task.dueDate ? getDateInputValue(new Date(task.dueDate), userTimezone) : "")
       }
     } catch (error) {
       await handleError(error, "Due date update")
+      // Reset to current value on error
+      setEditingDueDate(task.dueDate ? getDateInputValue(new Date(task.dueDate), userTimezone) : "")
     } finally {
       setIsSavingDueDate(false)
     }
@@ -402,12 +406,12 @@ export function TaskItem({
   }
 
   return (
-    <div className={`bg-white rounded-lg border p-2 sm:p-3 hover:shadow-md transition-shadow ${
+    <div className={`bg-white rounded-lg border p-2 hover:shadow-md transition-shadow ${
       task.status === "completed" ? "opacity-75" : ""
     } ${
       isOverdue ? "border-red-200 bg-red-50" : ""
     }`}>
-      <div className="flex items-start space-x-3">
+      <div className="flex items-start space-x-2">
         {/* Completion checkbox */}
         <LoadingButton
           loading={isLoading}
@@ -427,34 +431,35 @@ export function TaskItem({
 
         {/* Task content */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <div className="flex items-center">
-                {/* Editable task title */}
-                {isEditingTitle ? (
-                  <div className="flex-1 relative">
-                    <input
-                      ref={titleInputRef}
-                      type="text"
-                      value={editingTitle}
-                      onChange={(e) => setEditingTitle(e.target.value)}
-                      onKeyDown={handleTitleKeyDown}
-                      onBlur={handleTitleBlur}
-                      disabled={isSavingTitle}
-                      className={`w-full text-sm font-medium bg-white border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                        isSavingTitle ? "opacity-50 cursor-not-allowed" : ""
-                      }`}
-                      placeholder="Enter task title..."
-                    />
-                    {isSavingTitle && (
-                      <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
+          {/* First row: Title (left) and Actions (right) */}
+          <div className="flex items-start justify-between mb-1">
+            <div className="flex-1 min-w-0 pr-2">
+              {/* Editable task title */}
+              {isEditingTitle ? (
+                <div className="relative">
+                  <input
+                    ref={titleInputRef}
+                    type="text"
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onKeyDown={handleTitleKeyDown}
+                    onBlur={handleTitleBlur}
+                    disabled={isSavingTitle}
+                    className={`w-full text-sm font-medium bg-white border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      isSavingTitle ? "opacity-50 cursor-not-allowed" : ""
+                    }`}
+                    placeholder="Enter task title..."
+                  />
+                  {isSavingTitle && (
+                    <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-start">
                   <h3 
-                    className={`text-sm font-medium cursor-pointer hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors ${
+                    className={`text-sm font-medium cursor-pointer hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors line-clamp-2 ${
                       task.status === "completed" 
                         ? "line-through text-gray-500" 
                         : "text-gray-900 hover:text-blue-600"
@@ -465,27 +470,42 @@ export function TaskItem({
                     onTouchStart={handleTouchStart}
                     onTouchEnd={handleTouchEnd}
                     title={task.status !== "completed" ? "Click to edit title" : ""}
+                    style={{
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                      wordBreak: 'break-word'
+                    }}
                   >
                     {task.title}
                   </h3>
-                )}
-                {isOverdue && (
-                  <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                    Overdue
-                  </span>
-                )}
-              </div>
+                  {isOverdue && (
+                    <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 flex-shrink-0">
+                      Overdue
+                    </span>
+                  )}
+                </div>
+              )}
+              
+              {/* Description on separate line if exists */}
               {task.description && (
-                <p className={`mt-1 text-sm text-gray-600 ${
+                <p className={`mt-1 text-sm text-gray-600 line-clamp-1 ${
                   task.status === "completed" ? "line-through" : ""
-                }`}>
+                }`}
+                style={{
+                  display: '-webkit-box',
+                  WebkitLineClamp: 1,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden'
+                }}>
                   {task.description}
                 </p>
               )}
             </div>
 
             {/* Actions */}
-            <div className="flex items-center space-x-2 ml-4">
+            <div className="flex items-center space-x-2 flex-shrink-0">
               <button
                 onClick={() => setIsEditing(true)}
                 disabled={isLoading}
@@ -509,177 +529,186 @@ export function TaskItem({
             </div>
           </div>
 
-          {/* Task metadata */}
-          <div className="mt-2 flex items-center space-x-4 text-xs text-gray-500">
-            {/* Clickable Priority with Dropdown */}
-            <div className="relative" ref={priorityDropdownRef}>
-              <span 
-                className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium cursor-pointer hover:shadow-md transition-all ${
-                  priorityColors[task.priority]
-                } ${
-                  task.status !== "completed" ? "hover:scale-105" : "cursor-default"
-                } ${
-                  isSavingPriority ? "opacity-50" : ""
-                }`}
-                onClick={handlePriorityClick}
-                title={task.status !== "completed" ? "Click to change priority" : ""}
-              >
-                {isSavingPriority ? (
-                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current mr-1"></div>
-                ) : null}
-                {priorityLabels[task.priority]}
-                {task.status !== "completed" && !isSavingPriority && (
-                  <svg className="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          {/* Second row: Other metadata (left) and Priority + Due Date (right) */}
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            {/* Left side: Project, Context, Area, Tags */}
+            <div className="flex items-center space-x-3 min-w-0 flex-1">
+              {/* Project */}
+              {task.project && (
+                <span className="flex items-center truncate">
+                  <svg className="w-3 h-3 mr-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                   </svg>
-                )}
-              </span>
+                  <span className="truncate">{task.project.name}</span>
+                </span>
+              )}
 
-              {/* Priority Dropdown */}
-              {isEditingPriority && task.status !== "completed" && (
-                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[100px]">
-                  {priorityOrder.map((priority) => (
-                    <button
-                      key={priority}
-                      onClick={() => handlePrioritySelect(priority)}
-                      disabled={isSavingPriority}
-                      className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-gray-50 transition-colors first:rounded-t-md last:rounded-b-md ${
-                        priority === task.priority ? 'bg-blue-50' : ''
-                      } ${
-                        isSavingPriority ? 'opacity-50 cursor-not-allowed' : ''
-                      }`}
+              {/* Context */}
+              {task.context && (
+                <span className="flex items-center truncate">
+                  <svg className="w-3 h-3 mr-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span className="truncate">{task.context.name}</span>
+                </span>
+              )}
+
+              {/* Area */}
+              {task.area && (
+                <span className="flex items-center truncate">
+                  <svg className="w-3 h-3 mr-1 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                  </svg>
+                  <span className="truncate">{task.area.name}</span>
+                </span>
+              )}
+
+              {/* Tags */}
+              {task.tags.length > 0 && (
+                <div className="flex items-center space-x-1 min-w-0">
+                  {task.tags.slice(0, 2).map((tag, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 truncate"
                     >
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${priorityColors[priority]}`}>
-                        {priorityLabels[priority]}
-                      </span>
-                    </button>
+                      #{tag}
+                    </span>
                   ))}
+                  {task.tags.length > 2 && (
+                    <span className="text-xs text-gray-400">+{task.tags.length - 2}</span>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Clickable Due date */}
-            {isEditingDueDate ? (
-              <div className="flex items-center space-x-2">
-                <div className="relative">
-                  <input
-                    ref={dueDateInputRef}
-                    type="date"
-                    value={editingDueDate}
-                    onChange={(e) => setEditingDueDate(e.target.value)}
-                    onKeyDown={handleDueDateKeyDown}
-                    onBlur={handleDueDateBlur}
-                    disabled={isSavingDueDate}
-                    className={`text-xs border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                      isSavingDueDate ? "opacity-50 cursor-not-allowed" : ""
-                    }`}
-                  />
-                  {isSavingDueDate && (
-                    <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
-                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                    </div>
-                  )}
-                </div>
-                <div className="flex space-x-1">
-                  <button
-                    onClick={() => setQuickDate(0)}
-                    disabled={isSavingDueDate}
-                    className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors"
-                  >
-                    Today
-                  </button>
-                  <button
-                    onClick={() => setQuickDate(1)}
-                    disabled={isSavingDueDate}
-                    className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200 transition-colors"
-                  >
-                    Tomorrow
-                  </button>
-                  <button
-                    onClick={clearDueDate}
-                    disabled={isSavingDueDate}
-                    className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition-colors"
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-            ) : (
-              task.dueDate ? (
+            {/* Right side: Priority and Due Date */}
+            <div className="flex items-center space-x-2 flex-shrink-0 ml-2">
+              {/* Priority */}
+              <div className="relative" ref={priorityDropdownRef}>
                 <span 
-                  className={`flex items-center cursor-pointer hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors ${
-                    isOverdue ? "text-red-600 font-medium" : ""
+                  className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium cursor-pointer hover:shadow-md transition-all ${
+                    priorityColors[task.priority]
                   } ${
-                    task.status !== "completed" ? "hover:text-blue-600 hover:shadow-sm" : ""
+                    task.status !== "completed" ? "hover:scale-105" : "cursor-default"
+                  } ${
+                    isSavingPriority ? "opacity-50" : ""
                   }`}
-                  onClick={handleDueDateClick}
-                  title={task.status !== "completed" ? "Click to edit due date" : ""}
+                  onClick={handlePriorityClick}
+                  title={task.status !== "completed" ? "Click to change priority" : ""}
                 >
-                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  {formatDueDate(new Date(task.dueDate))}
+                  {isSavingPriority ? (
+                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current mr-1"></div>
+                  ) : null}
+                  {priorityLabels[task.priority]}
+                  {task.status !== "completed" && !isSavingPriority && (
+                    <svg className="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  )}
                 </span>
+
+                {/* Priority Dropdown */}
+                {isEditingPriority && task.status !== "completed" && (
+                  <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[100px]">
+                    {priorityOrder.map((priority) => (
+                      <button
+                        key={priority}
+                        onClick={() => handlePrioritySelect(priority)}
+                        disabled={isSavingPriority}
+                        className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-gray-50 transition-colors first:rounded-t-md last:rounded-b-md ${
+                          priority === task.priority ? 'bg-blue-50' : ''
+                        } ${
+                          isSavingPriority ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                      >
+                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${priorityColors[priority]}`}>
+                          {priorityLabels[priority]}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Due Date */}
+              {isEditingDueDate ? (
+                <div className="flex items-center space-x-1">
+                  <div className="relative">
+                    <input
+                      ref={dueDateInputRef}
+                      type="date"
+                      value={editingDueDate}
+                      onChange={(e) => setEditingDueDate(e.target.value)}
+                      onKeyDown={handleDueDateKeyDown}
+                      onBlur={handleDueDateBlur}
+                      disabled={isSavingDueDate}
+                      className={`text-xs border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                        isSavingDueDate ? "opacity-50 cursor-not-allowed" : ""
+                      }`}
+                    />
+                    {isSavingDueDate && (
+                      <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex space-x-1">
+                    <button
+                      onClick={() => setQuickDate(0)}
+                      disabled={isSavingDueDate}
+                      className="px-1 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors"
+                    >
+                      Today
+                    </button>
+                    <button
+                      onClick={() => setQuickDate(1)}
+                      disabled={isSavingDueDate}
+                      className="px-1 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200 transition-colors"
+                    >
+                      Tomorrow
+                    </button>
+                    <button
+                      onClick={clearDueDate}
+                      disabled={isSavingDueDate}
+                      className="px-1 py-1 text-xs bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition-colors"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
               ) : (
-                task.status !== "completed" && (
+                task.dueDate ? (
                   <span 
-                    className="flex items-center cursor-pointer hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors text-gray-400 hover:text-blue-600 hover:shadow-sm"
+                    className={`flex items-center cursor-pointer hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors ${
+                      isOverdue ? "text-red-600 font-medium" : ""
+                    } ${
+                      task.status !== "completed" ? "hover:text-blue-600 hover:shadow-sm" : ""
+                    }`}
                     onClick={handleDueDateClick}
-                    title="Click to set due date"
+                    title={task.status !== "completed" ? "Click to edit due date" : ""}
                   >
                     <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
-                    Set due date
+                    {formatDueDate(new Date(task.dueDate))}
                   </span>
+                ) : (
+                  task.status !== "completed" && (
+                    <span 
+                      className="flex items-center cursor-pointer hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors text-gray-400 hover:text-blue-600 hover:shadow-sm"
+                      onClick={handleDueDateClick}
+                      title="Click to set due date"
+                    >
+                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      Set due date
+                    </span>
+                  )
                 )
-              )
-            )}
-
-            {/* Project */}
-            {task.project && (
-              <span className="flex items-center">
-                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                </svg>
-                {task.project.name}
-              </span>
-            )}
-
-            {/* Context */}
-            {task.context && (
-              <span className="flex items-center">
-                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                {task.context.name}
-              </span>
-            )}
-
-            {/* Area */}
-            {task.area && (
-              <span className="flex items-center">
-                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                </svg>
-                {task.area.name}
-              </span>
-            )}
-
-            {/* Tags */}
-            {task.tags.length > 0 && (
-              <div className="flex items-center space-x-1">
-                {task.tags.map((tag, index) => (
-                  <span
-                    key={index}
-                    className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"
-                  >
-                    #{tag}
-                  </span>
-                ))}
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>

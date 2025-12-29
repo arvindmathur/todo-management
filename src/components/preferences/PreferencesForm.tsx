@@ -154,35 +154,6 @@ export function PreferencesForm() {
 
   return (
     <>
-      {/* Top Navigation */}
-      <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Preferences</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Customize your productivity workflow and application settings.
-          </p>
-        </div>
-        <div className="flex space-x-3">
-          <button
-            onClick={handleCancel}
-            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSaveAll}
-            disabled={!hasUnsavedChanges || isUpdating}
-            className={`px-4 py-2 text-sm font-medium text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
-              hasUnsavedChanges && !isUpdating
-                ? "bg-blue-600 hover:bg-blue-700"
-                : "bg-gray-400 cursor-not-allowed"
-            }`}
-          >
-            {isUpdating ? "Saving..." : "Save All"}
-          </button>
-        </div>
-      </div>
-
       <div className="space-y-8">
         {/* Success/Error Messages */}
         {updateMessage && (
@@ -790,10 +761,16 @@ export function PreferencesForm() {
         </div>
       </div>
 
-      {/* Bottom Navigation */}
+      {/* Header and Bottom Navigation */}
       <div className="flex justify-between items-center mt-8 pt-6 border-t border-gray-200">
-        <div className="text-sm text-gray-500">
-          {hasUnsavedChanges ? "You have unsaved changes" : "All changes saved"}
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Preferences</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Customize your productivity workflow and application settings.
+          </p>
+          <div className="mt-2 text-sm text-gray-500">
+            {hasUnsavedChanges ? "You have unsaved changes" : "All changes saved"}
+          </div>
         </div>
         <div className="flex space-x-3">
           <button
