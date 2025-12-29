@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
+import { BatchOperations } from "@/lib/db-batch-operations"
 
 const processInboxItemSchema = z.object({
   action: z.enum(["convert_to_task", "convert_to_project", "mark_as_reference", "delete"]),
@@ -44,13 +46,16 @@ export async function POST(
     const validatedData = processInboxItemSchema.parse(body)
 
     // Check if inbox item exists and belongs to user
-    const existingItem = await prisma.inboxItem.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const existingItem = await DatabaseConnection.withRetry(
+      () => prisma.inboxItem.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'check-inbox-item-for-process'
+    )
 
     if (!existingItem) {
       return NextResponse.json(
@@ -78,48 +83,35 @@ export async function POST(
           )
         }
 
-        // Validate related entities if provided
-        if (validatedData.taskData.projectId) {
-          const project = await prisma.project.findFirst({
-            where: {
-              id: validatedData.taskData.projectId,
-              userId: session.user.id,
-              tenantId: session.user.tenantId,
-            }
-          })
-          if (!project) {
+        // Validate related entities using batch operations
+        const entityIds = {
+          projectIds: validatedData.taskData.projectId ? [validatedData.taskData.projectId] : [],
+          contextIds: validatedData.taskData.contextId ? [validatedData.taskData.contextId] : [],
+          areaIds: validatedData.taskData.areaId ? [validatedData.taskData.areaId] : [],
+        }
+
+        if (Object.values(entityIds).some(arr => arr.length > 0)) {
+          const validation = await BatchOperations.validateEntities(
+            session.user.tenantId,
+            session.user.id,
+            entityIds
+          )
+
+          if (validatedData.taskData.projectId && !validation.validProjects.has(validatedData.taskData.projectId)) {
             return NextResponse.json(
               { error: "Project not found" },
               { status: 404 }
             )
           }
-        }
 
-        if (validatedData.taskData.contextId) {
-          const context = await prisma.context.findFirst({
-            where: {
-              id: validatedData.taskData.contextId,
-              userId: session.user.id,
-              tenantId: session.user.tenantId,
-            }
-          })
-          if (!context) {
+          if (validatedData.taskData.contextId && !validation.validContexts.has(validatedData.taskData.contextId)) {
             return NextResponse.json(
               { error: "Context not found" },
               { status: 404 }
             )
           }
-        }
 
-        if (validatedData.taskData.areaId) {
-          const area = await prisma.area.findFirst({
-            where: {
-              id: validatedData.taskData.areaId,
-              userId: session.user.id,
-              tenantId: session.user.tenantId,
-            }
-          })
-          if (!area) {
+          if (validatedData.taskData.areaId && !validation.validAreas.has(validatedData.taskData.areaId)) {
             return NextResponse.json(
               { error: "Area not found" },
               { status: 404 }
@@ -128,25 +120,28 @@ export async function POST(
         }
 
         // Create task
-        const task = await prisma.task.create({
-          data: {
-            ...validatedData.taskData,
-            dueDate: validatedData.taskData.dueDate ? new Date(validatedData.taskData.dueDate) : null,
-            userId: session.user.id,
-            tenantId: session.user.tenantId,
-          },
-          include: {
-            project: {
-              select: { id: true, name: true }
+        const task = await DatabaseConnection.withRetry(
+          () => prisma.task.create({
+            data: {
+              ...validatedData.taskData,
+              dueDate: validatedData.taskData.dueDate ? new Date(validatedData.taskData.dueDate) : null,
+              userId: session.user.id,
+              tenantId: session.user.tenantId,
             },
-            context: {
-              select: { id: true, name: true }
-            },
-            area: {
-              select: { id: true, name: true }
+            include: {
+              project: {
+                select: { id: true, name: true }
+              },
+              context: {
+                select: { id: true, name: true }
+              },
+              area: {
+                select: { id: true, name: true }
+              }
             }
-          }
-        })
+          }),
+          'create-task-from-inbox'
+        )
 
         result = { task, type: "task" }
         break
@@ -159,16 +154,15 @@ export async function POST(
           )
         }
 
-        // Validate area if provided
+        // Validate area if provided using batch operations
         if (validatedData.projectData.areaId) {
-          const area = await prisma.area.findFirst({
-            where: {
-              id: validatedData.projectData.areaId,
-              userId: session.user.id,
-              tenantId: session.user.tenantId,
-            }
-          })
-          if (!area) {
+          const validation = await BatchOperations.validateEntities(
+            session.user.tenantId,
+            session.user.id,
+            { areaIds: [validatedData.projectData.areaId] }
+          )
+          
+          if (!validation.validAreas.has(validatedData.projectData.areaId)) {
             return NextResponse.json(
               { error: "Area not found" },
               { status: 404 }
@@ -177,18 +171,21 @@ export async function POST(
         }
 
         // Create project
-        const project = await prisma.project.create({
-          data: {
-            ...validatedData.projectData,
-            userId: session.user.id,
-            tenantId: session.user.tenantId,
-          },
-          include: {
-            area: {
-              select: { id: true, name: true }
+        const project = await DatabaseConnection.withRetry(
+          () => prisma.project.create({
+            data: {
+              ...validatedData.projectData,
+              userId: session.user.id,
+              tenantId: session.user.tenantId,
+            },
+            include: {
+              area: {
+                select: { id: true, name: true }
+              }
             }
-          }
-        })
+          }),
+          'create-project-from-inbox'
+        )
 
         result = { project, type: "project" }
         break
@@ -213,30 +210,49 @@ export async function POST(
         )
     }
 
-    // Mark inbox item as processed
-    const processedItem = await prisma.inboxItem.update({
-      where: { id: params.id },
-      data: {
-        processed: true,
-        processedAt: new Date(),
-      }
-    })
+    // Mark inbox item as processed and handle deletion/count in parallel
+    const operations = [
+      DatabaseConnection.withRetry(
+        () => prisma.inboxItem.update({
+          where: { id: params.id },
+          data: {
+            processed: true,
+            processedAt: new Date(),
+          }
+        }),
+        'mark-inbox-processed'
+      )
+    ]
 
     // If action was delete, remove the item entirely
     if (validatedData.action === "delete") {
-      await prisma.inboxItem.delete({
-        where: { id: params.id }
-      })
+      operations.push(
+        DatabaseConnection.withRetry(
+          () => prisma.inboxItem.delete({
+            where: { id: params.id }
+          }),
+          'delete-processed-inbox-item'
+        )
+      )
     }
 
-    // Get updated unprocessed count
-    const unprocessedCount = await prisma.inboxItem.count({
-      where: {
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-        processed: false,
-      }
-    })
+    // Always get updated count
+    operations.push(
+      DatabaseConnection.withRetry(
+        () => prisma.inboxItem.count({
+          where: {
+            userId: session.user.id,
+            tenantId: session.user.tenantId,
+            processed: false,
+          }
+        }),
+        'count-unprocessed-after-process'
+      )
+    )
+
+    const results = await Promise.all(operations)
+    const processedItem = validatedData.action !== "delete" ? results[0] : null
+    const unprocessedCount = results[results.length - 1] as number
 
     return NextResponse.json({
       message: "Inbox item processed successfully",

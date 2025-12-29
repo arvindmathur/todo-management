@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { updateProjectCompletion } from "@/lib/tasks"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 // Mark task as complete
 export async function POST(
@@ -20,13 +21,16 @@ export async function POST(
     }
 
     // Check if task exists and belongs to user
-    const existingTask = await prisma.task.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const existingTask = await DatabaseConnection.withRetry(
+      () => prisma.task.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'complete-task-find-existing'
+    )
 
     if (!existingTask) {
       return NextResponse.json(
@@ -42,24 +46,27 @@ export async function POST(
       )
     }
 
-    const task = await prisma.task.update({
-      where: { id: params.id },
-      data: {
-        status: "completed",
-        completedAt: new Date(),
-      },
-      include: {
-        project: {
-          select: { id: true, name: true }
+    const task = await DatabaseConnection.withRetry(
+      () => prisma.task.update({
+        where: { id: params.id },
+        data: {
+          status: "completed",
+          completedAt: new Date(),
         },
-        context: {
-          select: { id: true, name: true }
-        },
-        area: {
-          select: { id: true, name: true }
+        include: {
+          project: {
+            select: { id: true, name: true }
+          },
+          context: {
+            select: { id: true, name: true }
+          },
+          area: {
+            select: { id: true, name: true }
+          }
         }
-      }
-    })
+      }),
+      'complete-task'
+    )
 
     // Update project completion status if task belongs to a project
     if (existingTask.projectId) {
@@ -99,13 +106,16 @@ export async function DELETE(
     }
 
     // Check if task exists and belongs to user
-    const existingTask = await prisma.task.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const existingTask = await DatabaseConnection.withRetry(
+      () => prisma.task.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'reopen-task-find-existing'
+    )
 
     if (!existingTask) {
       return NextResponse.json(
@@ -121,24 +131,27 @@ export async function DELETE(
       )
     }
 
-    const task = await prisma.task.update({
-      where: { id: params.id },
-      data: {
-        status: "active",
-        completedAt: null,
-      },
-      include: {
-        project: {
-          select: { id: true, name: true }
+    const task = await DatabaseConnection.withRetry(
+      () => prisma.task.update({
+        where: { id: params.id },
+        data: {
+          status: "active",
+          completedAt: null,
         },
-        context: {
-          select: { id: true, name: true }
-        },
-        area: {
-          select: { id: true, name: true }
+        include: {
+          project: {
+            select: { id: true, name: true }
+          },
+          context: {
+            select: { id: true, name: true }
+          },
+          area: {
+            select: { id: true, name: true }
+          }
         }
-      }
-    })
+      }),
+      'reopen-task'
+    )
 
     // Update project completion status if task belongs to a project
     if (existingTask.projectId) {

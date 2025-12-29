@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 // Mark project as complete
 export async function POST(
@@ -19,21 +20,24 @@ export async function POST(
     }
 
     // Check if project exists and belongs to user
-    const existingProject = await prisma.project.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      },
-      include: {
-        tasks: {
-          select: {
-            id: true,
-            status: true,
+    const existingProject = await DatabaseConnection.withRetry(
+      () => prisma.project.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        },
+        include: {
+          tasks: {
+            select: {
+              id: true,
+              status: true,
+            }
           }
         }
-      }
-    })
+      }),
+      'get-project-for-complete'
+    )
 
     if (!existingProject) {
       return NextResponse.json(
@@ -55,33 +59,36 @@ export async function POST(
       )
     }
 
-    const project = await prisma.project.update({
-      where: { id: params.id },
-      data: { 
-        status: "completed",
-        updatedAt: new Date()
-      },
-      include: {
-        area: {
-          select: { id: true, name: true }
+    const project = await DatabaseConnection.withRetry(
+      () => prisma.project.update({
+        where: { id: params.id },
+        data: { 
+          status: "completed",
+          updatedAt: new Date()
         },
-        tasks: {
-          select: {
-            id: true,
-            title: true,
-            status: true,
-            priority: true,
-            dueDate: true,
-            completedAt: true,
-          }
-        },
-        _count: {
-          select: {
-            tasks: true
+        include: {
+          area: {
+            select: { id: true, name: true }
+          },
+          tasks: {
+            select: {
+              id: true,
+              title: true,
+              status: true,
+              priority: true,
+              dueDate: true,
+              completedAt: true,
+            }
+          },
+          _count: {
+            select: {
+              tasks: true
+            }
           }
         }
-      }
-    })
+      }),
+      'complete-project'
+    )
 
     // Calculate final progress (should be 100%)
     const totalTasks = project.tasks.length
@@ -125,13 +132,16 @@ export async function DELETE(
     }
 
     // Check if project exists and belongs to user
-    const existingProject = await prisma.project.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const existingProject = await DatabaseConnection.withRetry(
+      () => prisma.project.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'get-project-for-reopen'
+    )
 
     if (!existingProject) {
       return NextResponse.json(
@@ -140,33 +150,36 @@ export async function DELETE(
       )
     }
 
-    const project = await prisma.project.update({
-      where: { id: params.id },
-      data: { 
-        status: "active",
-        updatedAt: new Date()
-      },
-      include: {
-        area: {
-          select: { id: true, name: true }
+    const project = await DatabaseConnection.withRetry(
+      () => prisma.project.update({
+        where: { id: params.id },
+        data: { 
+          status: "active",
+          updatedAt: new Date()
         },
-        tasks: {
-          select: {
-            id: true,
-            title: true,
-            status: true,
-            priority: true,
-            dueDate: true,
-            completedAt: true,
-          }
-        },
-        _count: {
-          select: {
-            tasks: true
+        include: {
+          area: {
+            select: { id: true, name: true }
+          },
+          tasks: {
+            select: {
+              id: true,
+              title: true,
+              status: true,
+              priority: true,
+              dueDate: true,
+              completedAt: true,
+            }
+          },
+          _count: {
+            select: {
+              tasks: true
+            }
           }
         }
-      }
-    })
+      }),
+      'reopen-project'
+    )
 
     // Calculate progress
     const totalTasks = project.tasks.length

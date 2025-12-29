@@ -4,6 +4,7 @@ import { z } from "zod"
 import bcrypt from "bcryptjs"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, "Current password is required"),
@@ -30,13 +31,16 @@ export async function PUT(request: NextRequest) {
     const validatedData = changePasswordSchema.parse(body)
 
     // Get current user with password
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: {
-        id: true,
-        password: true,
-      }
-    })
+    const user = await DatabaseConnection.withRetry(
+      () => prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: {
+          id: true,
+          password: true,
+        }
+      }),
+      'get-user-for-password-change'
+    )
 
     if (!user || !user.password) {
       return NextResponse.json(
@@ -62,12 +66,15 @@ export async function PUT(request: NextRequest) {
     const hashedNewPassword = await bcrypt.hash(validatedData.newPassword, 12)
 
     // Update password
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: {
-        password: hashedNewPassword,
-      }
-    })
+    await DatabaseConnection.withRetry(
+      () => prisma.user.update({
+        where: { id: session.user.id },
+        data: {
+          password: hashedNewPassword,
+        }
+      }),
+      'update-user-password'
+    )
 
     return NextResponse.json({
       message: "Password changed successfully"

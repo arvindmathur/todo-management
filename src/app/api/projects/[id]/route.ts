@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
+import { BatchOperations } from "@/lib/db-batch-operations"
 
 const updateProjectSchema = z.object({
   name: z.string().min(1, "Project name is required").max(255, "Project name too long").optional(),
@@ -33,41 +35,44 @@ export async function GET(
       )
     }
 
-    const project = await prisma.project.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      },
-      include: {
-        area: {
-          select: { id: true, name: true }
+    const project = await DatabaseConnection.withRetry(
+      () => prisma.project.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
         },
-        tasks: {
-          select: {
-            id: true,
-            title: true,
-            description: true,
-            status: true,
-            priority: true,
-            dueDate: true,
-            completedAt: true,
-            createdAt: true,
+        include: {
+          area: {
+            select: { id: true, name: true }
           },
-          orderBy: [
-            { status: "asc" }, // Active tasks first
-            { priority: "desc" },
-            { dueDate: "asc" },
-            { createdAt: "desc" }
-          ]
-        },
-        _count: {
-          select: {
-            tasks: true
+          tasks: {
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              status: true,
+              priority: true,
+              dueDate: true,
+              completedAt: true,
+              createdAt: true,
+            },
+            orderBy: [
+              { status: "asc" }, // Active tasks first
+              { priority: "desc" },
+              { dueDate: "asc" },
+              { createdAt: "desc" }
+            ]
+          },
+          _count: {
+            select: {
+              tasks: true
+            }
           }
         }
-      }
-    })
+      }),
+      'get-project-by-id'
+    )
 
     if (!project) {
       return NextResponse.json(
@@ -125,13 +130,16 @@ export async function PUT(
     const validatedData = updateProjectSchema.parse(body)
 
     // Check if project exists and belongs to user
-    const existingProject = await prisma.project.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const existingProject = await DatabaseConnection.withRetry(
+      () => prisma.project.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'check-project-exists'
+    )
 
     if (!existingProject) {
       return NextResponse.json(
@@ -140,16 +148,19 @@ export async function PUT(
       )
     }
 
-    // Validate area belongs to user if provided
-    if (validatedData.areaId) {
-      const area = await prisma.area.findFirst({
-        where: {
-          id: validatedData.areaId,
-          userId: session.user.id,
-          tenantId: session.user.tenantId,
-        }
-      })
-      if (!area) {
+    // Validate related entities using batch operations
+    const entityIds = {
+      areaIds: validatedData.areaId ? [validatedData.areaId] : [],
+    }
+
+    if (Object.values(entityIds).some(arr => arr.length > 0)) {
+      const validation = await BatchOperations.validateEntities(
+        session.user.tenantId,
+        session.user.id,
+        entityIds
+      )
+
+      if (validatedData.areaId && !validation.validAreas.has(validatedData.areaId)) {
         return NextResponse.json(
           { error: "Area not found" },
           { status: 404 }
@@ -159,14 +170,17 @@ export async function PUT(
 
     // Validate next action belongs to this project if provided
     if (validatedData.nextActionId) {
-      const task = await prisma.task.findFirst({
-        where: {
-          id: validatedData.nextActionId,
-          projectId: params.id,
-          userId: session.user.id,
-          tenantId: session.user.tenantId,
-        }
-      })
+      const task = await DatabaseConnection.withRetry(
+        () => prisma.task.findFirst({
+          where: {
+            id: validatedData.nextActionId,
+            projectId: params.id,
+            userId: session.user.id,
+            tenantId: session.user.tenantId,
+          }
+        }),
+        'validate-next-action'
+      )
       if (!task) {
         return NextResponse.json(
           { error: "Next action task not found in this project" },
@@ -175,30 +189,33 @@ export async function PUT(
       }
     }
 
-    const project = await prisma.project.update({
-      where: { id: params.id },
-      data: validatedData,
-      include: {
-        area: {
-          select: { id: true, name: true }
-        },
-        tasks: {
-          select: {
-            id: true,
-            title: true,
-            status: true,
-            priority: true,
-            dueDate: true,
-            completedAt: true,
-          }
-        },
-        _count: {
-          select: {
-            tasks: true
+    const project = await DatabaseConnection.withRetry(
+      () => prisma.project.update({
+        where: { id: params.id },
+        data: validatedData,
+        include: {
+          area: {
+            select: { id: true, name: true }
+          },
+          tasks: {
+            select: {
+              id: true,
+              title: true,
+              status: true,
+              priority: true,
+              dueDate: true,
+              completedAt: true,
+            }
+          },
+          _count: {
+            select: {
+              tasks: true
+            }
           }
         }
-      }
-    })
+      }),
+      'update-project'
+    )
 
     // Calculate progress
     const totalTasks = project.tasks.length
@@ -252,16 +269,19 @@ export async function DELETE(
     const options = deleteOptionsSchema.parse(Object.fromEntries(searchParams))
 
     // Check if project exists and belongs to user
-    const existingProject = await prisma.project.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      },
-      include: {
-        tasks: true
-      }
-    })
+    const existingProject = await DatabaseConnection.withRetry(
+      () => prisma.project.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        },
+        include: {
+          tasks: true
+        }
+      }),
+      'get-project-for-delete'
+    )
 
     if (!existingProject) {
       return NextResponse.json(
@@ -275,13 +295,16 @@ export async function DELETE(
       switch (options.taskAction) {
         case "delete":
           // Delete all associated tasks
-          await prisma.task.deleteMany({
-            where: {
-              projectId: params.id,
-              userId: session.user.id,
-              tenantId: session.user.tenantId,
-            }
-          })
+          await DatabaseConnection.withRetry(
+            () => prisma.task.deleteMany({
+              where: {
+                projectId: params.id,
+                userId: session.user.id,
+                tenantId: session.user.tenantId,
+              }
+            }),
+            'delete-project-tasks'
+          )
           break
           
         case "move":
@@ -293,55 +316,62 @@ export async function DELETE(
             )
           }
           
-          // Validate target project exists and belongs to user
-          const targetProject = await prisma.project.findFirst({
-            where: {
-              id: options.moveToProjectId,
-              userId: session.user.id,
-              tenantId: session.user.tenantId,
-            }
-          })
+          // Validate target project exists and belongs to user using batch operations
+          const validation = await BatchOperations.validateEntities(
+            session.user.tenantId,
+            session.user.id,
+            { projectIds: [options.moveToProjectId] }
+          )
           
-          if (!targetProject) {
+          if (!validation.validProjects.has(options.moveToProjectId)) {
             return NextResponse.json(
               { error: "Target project not found" },
               { status: 404 }
             )
           }
           
-          await prisma.task.updateMany({
-            where: {
-              projectId: params.id,
-              userId: session.user.id,
-              tenantId: session.user.tenantId,
-            },
-            data: {
-              projectId: options.moveToProjectId
-            }
-          })
+          await DatabaseConnection.withRetry(
+            () => prisma.task.updateMany({
+              where: {
+                projectId: params.id,
+                userId: session.user.id,
+                tenantId: session.user.tenantId,
+              },
+              data: {
+                projectId: options.moveToProjectId
+              }
+            }),
+            'move-project-tasks'
+          )
           break
           
         case "unassign":
         default:
           // Unassign tasks from project (set projectId to null)
-          await prisma.task.updateMany({
-            where: {
-              projectId: params.id,
-              userId: session.user.id,
-              tenantId: session.user.tenantId,
-            },
-            data: {
-              projectId: null
-            }
-          })
+          await DatabaseConnection.withRetry(
+            () => prisma.task.updateMany({
+              where: {
+                projectId: params.id,
+                userId: session.user.id,
+                tenantId: session.user.tenantId,
+              },
+              data: {
+                projectId: null
+              }
+            }),
+            'unassign-project-tasks'
+          )
           break
       }
     }
 
     // Delete the project
-    await prisma.project.delete({
-      where: { id: params.id }
-    })
+    await DatabaseConnection.withRetry(
+      () => prisma.project.delete({
+        where: { id: params.id }
+      }),
+      'delete-project'
+    )
 
     return NextResponse.json({
       message: "Project deleted successfully",

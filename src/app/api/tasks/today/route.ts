@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 const todaySchema = z.object({
   includeCompleted: z.enum(["none", "1day", "7days", "30days"]).optional().default("none"),
@@ -66,9 +67,10 @@ export async function GET(request: NextRequest) {
       ]
     }
 
-    const tasks = await prisma.task.findMany({
-      where: whereClause,
-      include: {
+    const tasks = await DatabaseConnection.withRetry(
+      () => prisma.task.findMany({
+        where: whereClause,
+        include: {
         project: {
           select: { id: true, name: true }
         },
@@ -78,13 +80,15 @@ export async function GET(request: NextRequest) {
         area: {
           select: { id: true, name: true }
         }
-      },
-      orderBy: [
-        { status: "asc" }, // Active tasks first
-        { priority: "desc" },
-        { createdAt: "desc" }
-      ]
-    })
+        },
+        orderBy: [
+          { status: "asc" }, // Active tasks first
+          { priority: "desc" },
+          { createdAt: "desc" }
+        ]
+      }),
+      'get-today-tasks'
+    )
 
     return NextResponse.json({ 
       tasks,

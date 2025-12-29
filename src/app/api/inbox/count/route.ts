@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 // Get unprocessed inbox item count
 export async function GET(request: NextRequest) {
@@ -15,20 +16,26 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const unprocessedCount = await prisma.inboxItem.count({
-      where: {
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-        processed: false,
-      }
-    })
+    const unprocessedCount = await DatabaseConnection.withRetry(
+      () => prisma.inboxItem.count({
+        where: {
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+          processed: false,
+        }
+      }),
+      'get-unprocessed-inbox-count'
+    )
 
-    const totalCount = await prisma.inboxItem.count({
-      where: {
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const totalCount = await DatabaseConnection.withRetry(
+      () => prisma.inboxItem.count({
+        where: {
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'get-total-inbox-count'
+    )
 
     const processedCount = totalCount - unprocessedCount
 

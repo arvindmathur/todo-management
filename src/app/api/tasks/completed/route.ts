@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 // Get completed tasks with filtering and pagination
 export async function GET(request: NextRequest) {
@@ -86,9 +87,10 @@ export async function GET(request: NextRequest) {
     }
 
     const [tasks, totalCount] = await Promise.all([
-      prisma.task.findMany({
-        where,
-        include: {
+      DatabaseConnection.withRetry(
+        () => prisma.task.findMany({
+          where,
+          include: {
           project: {
             select: { id: true, name: true }
           },
@@ -103,7 +105,12 @@ export async function GET(request: NextRequest) {
         skip,
         take: limit
       }),
-      prisma.task.count({ where })
+      'get-completed-tasks'
+    ),
+    DatabaseConnection.withRetry(
+      () => prisma.task.count({ where }),
+      'count-completed-tasks'
+    )
     ])
 
     const totalPages = Math.ceil(totalCount / limit)

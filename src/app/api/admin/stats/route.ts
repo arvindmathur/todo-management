@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { DatabaseConnection } from "@/lib/db-connection";
 import { NotificationScheduler } from "@/lib/email/scheduler";
 
 /**
@@ -19,10 +20,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Check if user is admin
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { isAdmin: true }
-    });
+    const user = await DatabaseConnection.withRetry(
+      () => prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { isAdmin: true }
+      }),
+      'check-admin-user'
+    );
 
     if (!user?.isAdmin) {
       return NextResponse.json(
@@ -54,31 +58,46 @@ export async function GET(request: NextRequest) {
       newUsersThisWeek,
       newUsersThisMonth
     ] = await Promise.all([
-      prisma.user.count(),
-      prisma.user.count({
-        where: {
-          sessions: {
-            some: {
-              expires: { gt: now }
+      DatabaseConnection.withRetry(
+        () => prisma.user.count(),
+        'count-total-users'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.user.count({
+          where: {
+            sessions: {
+              some: {
+                expires: { gt: now }
+              }
             }
           }
-        }
-      }),
-      prisma.user.count({
-        where: {
-          createdAt: { gte: today, lt: tomorrow }
-        }
-      }),
-      prisma.user.count({
-        where: {
-          createdAt: { gte: thisWeek, lt: nextWeek }
-        }
-      }),
-      prisma.user.count({
-        where: {
-          createdAt: { gte: thisMonth, lt: nextMonth }
-        }
-      })
+        }),
+        'count-active-users'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.user.count({
+          where: {
+            createdAt: { gte: today, lt: tomorrow }
+          }
+        }),
+        'count-new-users-today'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.user.count({
+          where: {
+            createdAt: { gte: thisWeek, lt: nextWeek }
+          }
+        }),
+        'count-new-users-week'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.user.count({
+          where: {
+            createdAt: { gte: thisMonth, lt: nextMonth }
+          }
+        }),
+        'count-new-users-month'
+      )
     ]);
 
     // Get task statistics
@@ -90,62 +109,84 @@ export async function GET(request: NextRequest) {
       tasksCreatedToday,
       tasksCompletedToday
     ] = await Promise.all([
-      prisma.task.count(),
-      prisma.task.count({ where: { status: 'active' } }),
-      prisma.task.count({ where: { status: 'completed' } }),
-      prisma.task.count({
-        where: {
-          status: 'active',
-          dueDate: { lt: today }
-        }
-      }),
-      prisma.task.count({
-        where: {
-          createdAt: { gte: today, lt: tomorrow }
-        }
-      }),
-      prisma.task.count({
-        where: {
-          status: 'completed',
-          completedAt: { gte: today, lt: tomorrow }
-        }
-      })
+      DatabaseConnection.withRetry(
+        () => prisma.task.count(),
+        'count-total-tasks'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.task.count({ where: { status: 'active' } }),
+        'count-active-tasks'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.task.count({ where: { status: 'completed' } }),
+        'count-completed-tasks'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.task.count({
+          where: {
+            status: 'active',
+            dueDate: { lt: today }
+          }
+        }),
+        'count-overdue-tasks'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.task.count({
+          where: {
+            createdAt: { gte: today, lt: tomorrow }
+          }
+        }),
+        'count-tasks-created-today'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.task.count({
+          where: {
+            status: 'completed',
+            completedAt: { gte: today, lt: tomorrow }
+          }
+        }),
+        'count-tasks-completed-today'
+      )
     ]);
 
-    // Get email notification statistics
-    const emailStats = await NotificationScheduler.getNotificationStats();
-
-    // Get users with email notifications enabled
-    const usersWithEmailNotifications = await prisma.user.count({
-      where: {
-        preferences: {
-          path: ['notifications', 'email'],
-          equals: true
-        }
-      }
-    });
-
-    // Get recent failed emails for monitoring
-    const recentFailedEmails = await prisma.emailNotification.findMany({
-      where: {
-        status: 'failed',
-        updatedAt: { gte: today }
-      },
-      select: {
-        id: true,
-        type: true,
-        errorMessage: true,
-        retryCount: true,
-        updatedAt: true,
-        user: {
-          select: {
-            email: true
+    // Get email notification statistics in parallel
+    const [emailStats, usersWithEmailNotifications, recentFailedEmails] = await Promise.all([
+      NotificationScheduler.getNotificationStats(),
+      DatabaseConnection.withRetry(
+        () => prisma.user.count({
+          where: {
+            preferences: {
+              path: ['notifications', 'email'],
+              equals: true
+            }
           }
-        }
-      },
-      orderBy: { updatedAt: 'desc' },
-      take: 10
-    });
+        }),
+        'count-users-with-email-notifications'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.emailNotification.findMany({
+          where: {
+            status: 'failed',
+            updatedAt: { gte: today }
+          },
+          select: {
+            id: true,
+            type: true,
+            errorMessage: true,
+            retryCount: true,
+            updatedAt: true,
+            user: {
+              select: {
+                email: true
+              }
+            }
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: 10
+        }),
+        'get-recent-failed-emails'
+      )
+    ]);
 
     return NextResponse.json({
       users: {

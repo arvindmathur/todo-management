@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 const updateAreaSchema = z.object({
   name: z.string().min(1, "Area name is required").max(100, "Area name too long").optional(),
@@ -25,64 +26,67 @@ export async function GET(
       )
     }
 
-    const area = await prisma.area.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      },
-      include: {
-        tasks: {
-          where: {
-            status: "active" // Only include active tasks
-          },
-          select: {
-            id: true,
-            title: true,
-            description: true,
-            status: true,
-            priority: true,
-            dueDate: true,
-            createdAt: true,
-          },
-          orderBy: [
-            { priority: "desc" },
-            { dueDate: "asc" },
-            { createdAt: "desc" }
-          ]
+    const area = await DatabaseConnection.withRetry(
+      () => prisma.area.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
         },
-        projects: {
-          where: {
-            status: "active" // Only include active projects
-          },
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            status: true,
-            outcome: true,
-            createdAt: true,
-          },
-          orderBy: [
-            { createdAt: "desc" }
-          ]
-        },
-        _count: {
-          select: {
-            tasks: {
-              where: {
-                status: "active"
-              }
+        include: {
+          tasks: {
+            where: {
+              status: "active" // Only include active tasks
             },
-            projects: {
-              where: {
-                status: "active"
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              status: true,
+              priority: true,
+              dueDate: true,
+              createdAt: true,
+            },
+            orderBy: [
+              { priority: "desc" },
+              { dueDate: "asc" },
+              { createdAt: "desc" }
+            ]
+          },
+          projects: {
+            where: {
+              status: "active" // Only include active projects
+            },
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              status: true,
+              outcome: true,
+              createdAt: true,
+            },
+            orderBy: [
+              { createdAt: "desc" }
+            ]
+          },
+          _count: {
+            select: {
+              tasks: {
+                where: {
+                  status: "active"
+                }
+              },
+              projects: {
+                where: {
+                  status: "active"
+                }
               }
             }
           }
         }
-      }
-    })
+      }),
+      'get-area-by-id'
+    )
 
     if (!area) {
       return NextResponse.json(
@@ -120,13 +124,16 @@ export async function PUT(
     const validatedData = updateAreaSchema.parse(body)
 
     // Check if area exists and belongs to user
-    const existingArea = await prisma.area.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const existingArea = await DatabaseConnection.withRetry(
+      () => prisma.area.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'check-area-exists-for-update'
+    )
 
     if (!existingArea) {
       return NextResponse.json(
@@ -137,14 +144,17 @@ export async function PUT(
 
     // Check if new name conflicts with existing area (if name is being changed)
     if (validatedData.name && validatedData.name !== existingArea.name) {
-      const nameConflict = await prisma.area.findFirst({
-        where: {
-          name: validatedData.name,
-          userId: session.user.id,
-          tenantId: session.user.tenantId,
-          id: { not: params.id }
-        }
-      })
+      const nameConflict = await DatabaseConnection.withRetry(
+        () => prisma.area.findFirst({
+          where: {
+            name: validatedData.name,
+            userId: session.user.id,
+            tenantId: session.user.tenantId,
+            id: { not: params.id }
+          }
+        }),
+        'check-area-name-conflict'
+      )
 
       if (nameConflict) {
         return NextResponse.json(
@@ -154,26 +164,29 @@ export async function PUT(
       }
     }
 
-    const area = await prisma.area.update({
-      where: { id: params.id },
-      data: validatedData,
-      include: {
-        _count: {
-          select: {
-            tasks: {
-              where: {
-                status: "active"
-              }
-            },
-            projects: {
-              where: {
-                status: "active"
+    const area = await DatabaseConnection.withRetry(
+      () => prisma.area.update({
+        where: { id: params.id },
+        data: validatedData,
+        include: {
+          _count: {
+            select: {
+              tasks: {
+                where: {
+                  status: "active"
+                }
+              },
+              projects: {
+                where: {
+                  status: "active"
+                }
               }
             }
           }
         }
-      }
-    })
+      }),
+      'update-area'
+    )
 
     return NextResponse.json({
       message: "Area updated successfully",
@@ -211,21 +224,24 @@ export async function DELETE(
     }
 
     // Check if area exists and belongs to user
-    const existingArea = await prisma.area.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      },
-      include: {
-        tasks: {
-          select: { id: true }
+    const existingArea = await DatabaseConnection.withRetry(
+      () => prisma.area.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
         },
-        projects: {
-          select: { id: true }
+        include: {
+          tasks: {
+            select: { id: true }
+          },
+          projects: {
+            select: { id: true }
+          }
         }
-      }
-    })
+      }),
+      'get-area-for-delete'
+    )
 
     if (!existingArea) {
       return NextResponse.json(
@@ -238,36 +254,55 @@ export async function DELETE(
     const tasksUnassigned = existingArea.tasks.length
     const projectsUnassigned = existingArea.projects.length
 
+    const operations = []
+
     if (tasksUnassigned > 0) {
-      await prisma.task.updateMany({
-        where: {
-          areaId: params.id,
-          userId: session.user.id,
-          tenantId: session.user.tenantId,
-        },
-        data: {
-          areaId: null
-        }
-      })
+      operations.push(
+        DatabaseConnection.withRetry(
+          () => prisma.task.updateMany({
+            where: {
+              areaId: params.id,
+              userId: session.user.id,
+              tenantId: session.user.tenantId,
+            },
+            data: {
+              areaId: null
+            }
+          }),
+          'unassign-area-from-tasks'
+        )
+      )
     }
 
     if (projectsUnassigned > 0) {
-      await prisma.project.updateMany({
-        where: {
-          areaId: params.id,
-          userId: session.user.id,
-          tenantId: session.user.tenantId,
-        },
-        data: {
-          areaId: null
-        }
-      })
+      operations.push(
+        DatabaseConnection.withRetry(
+          () => prisma.project.updateMany({
+            where: {
+              areaId: params.id,
+              userId: session.user.id,
+              tenantId: session.user.tenantId,
+            },
+            data: {
+              areaId: null
+            }
+          }),
+          'unassign-area-from-projects'
+        )
+      )
     }
 
     // Delete the area
-    await prisma.area.delete({
-      where: { id: params.id }
-    })
+    operations.push(
+      DatabaseConnection.withRetry(
+        () => prisma.area.delete({
+          where: { id: params.id }
+        }),
+        'delete-area'
+      )
+    )
+
+    await Promise.all(operations)
 
     return NextResponse.json({
       message: "Area deleted successfully",

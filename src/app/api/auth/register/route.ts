@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
 import { z } from "zod"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 import { createTenant } from "@/lib/tenant"
 import { auditLogger } from "@/lib/audit-logger"
 
@@ -17,9 +18,12 @@ export async function POST(request: NextRequest) {
     const { name, email, password } = registerSchema.parse(body)
 
     // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email }
-    })
+    const existingUser = await DatabaseConnection.withRetry(
+      () => prisma.user.findUnique({
+        where: { email }
+      }),
+      'check-existing-user'
+    )
 
     if (existingUser) {
       return NextResponse.json(
@@ -35,32 +39,35 @@ export async function POST(request: NextRequest) {
     const tenant = await createTenant(`${name}'s Workspace`)
 
     // Create user with default preferences and tenant association
-    const user = await prisma.user.create({
-      data: {
-        name,
-        email,
-        password: hashedPassword,
-        tenantId: tenant.id,
-        preferences: {
-          completedTaskRetention: 90,
-          defaultView: "simple",
-          theme: "system",
-          notifications: {
-            email: true,
-            browser: true,
-            weeklyReview: true
+    const user = await DatabaseConnection.withRetry(
+      () => prisma.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          tenantId: tenant.id,
+          preferences: {
+            completedTaskRetention: 90,
+            defaultView: "simple",
+            theme: "system",
+            notifications: {
+              email: true,
+              browser: true,
+              weeklyReview: true
+            }
           }
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          tenantId: true,
+          gtdEnabled: true,
+          createdAt: true
         }
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        tenantId: true,
-        gtdEnabled: true,
-        createdAt: true
-      }
-    })
+      }),
+      'create-user'
+    )
 
     // Log user registration
     await auditLogger.logCreate(

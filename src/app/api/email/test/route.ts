@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { DatabaseConnection } from "@/lib/db-connection";
 import { getEmailQueueProcessor } from "@/lib/email/queue-processor";
 import { getEmailService } from "@/lib/email/email-service";
 
@@ -20,10 +21,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user is admin
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { isAdmin: true, email: true }
-    });
+    const user = await DatabaseConnection.withRetry(
+      () => prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { isAdmin: true, email: true }
+      }),
+      'check-admin-user-for-email-test'
+    );
 
     if (!user?.isAdmin) {
       return NextResponse.json(

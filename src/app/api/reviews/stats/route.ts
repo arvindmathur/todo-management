@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 // Get review statistics
 export async function GET(request: NextRequest) {
@@ -23,24 +24,30 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get last completed review
-    const lastReview = await prisma.weeklyReview.findFirst({
-      where: {
-        tenantId,
-        userId: session.user.id,
-        status: "completed"
-      },
-      orderBy: { completedAt: "desc" }
-    })
-
-    // Get total review count
-    const totalReviews = await prisma.weeklyReview.count({
-      where: {
-        tenantId,
-        userId: session.user.id,
-        status: "completed"
-      }
-    })
+    // Get review statistics in parallel
+    const [lastReview, totalReviews] = await Promise.all([
+      DatabaseConnection.withRetry(
+        () => prisma.weeklyReview.findFirst({
+          where: {
+            tenantId,
+            userId: session.user.id,
+            status: "completed"
+          },
+          orderBy: { completedAt: "desc" }
+        }),
+        'get-last-review'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.weeklyReview.count({
+          where: {
+            tenantId,
+            userId: session.user.id,
+            status: "completed"
+          }
+        }),
+        'count-total-reviews'
+      )
+    ])
 
     // Calculate review streak (consecutive weeks with reviews)
     const reviewStreak = await calculateReviewStreak(tenantId, session.user.id)
@@ -80,17 +87,20 @@ export async function GET(request: NextRequest) {
 async function calculateReviewStreak(tenantId: string, userId: string): Promise<number> {
   try {
     // Get all completed reviews ordered by completion date (most recent first)
-    const reviews = await prisma.weeklyReview.findMany({
-      where: {
-        tenantId,
-        userId,
-        status: "completed"
-      },
-      select: {
-        completedAt: true
-      },
-      orderBy: { completedAt: "desc" }
-    })
+    const reviews = await DatabaseConnection.withRetry(
+      () => prisma.weeklyReview.findMany({
+        where: {
+          tenantId,
+          userId,
+          status: "completed"
+        },
+        select: {
+          completedAt: true
+        },
+        orderBy: { completedAt: "desc" }
+      }),
+      'get-reviews-for-streak'
+    )
 
     if (reviews.length === 0) return 0
 

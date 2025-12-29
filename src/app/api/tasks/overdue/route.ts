@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 const overdueSchema = z.object({
   includeCompleted: z.enum(["none", "1day", "7days", "30days"]).optional().default("none"),
@@ -63,7 +64,8 @@ export async function GET(request: NextRequest) {
       ]
     }
 
-    const tasks = await prisma.task.findMany({
+    const tasks = await DatabaseConnection.withRetry(
+      () => prisma.task.findMany({
       where: whereClause,
       include: {
         project: {
@@ -75,14 +77,16 @@ export async function GET(request: NextRequest) {
         area: {
           select: { id: true, name: true }
         }
-      },
-      orderBy: [
-        { status: "asc" }, // Active tasks first
-        { dueDate: "asc" }, // Oldest overdue first
-        { priority: "desc" },
-        { createdAt: "desc" }
-      ]
-    })
+        },
+        orderBy: [
+          { status: "asc" }, // Active tasks first
+          { dueDate: "asc" }, // Oldest overdue first
+          { priority: "desc" },
+          { createdAt: "desc" }
+        ]
+      }),
+      'get-overdue-tasks'
+    )
 
     return NextResponse.json({ 
       tasks,

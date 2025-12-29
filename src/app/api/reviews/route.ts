@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 const createReviewSchema = z.object({
   notes: z.string().optional(),
@@ -29,68 +30,43 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Check for active review
-    const activeReview = await prisma.weeklyReview.findFirst({
-      where: {
-        tenantId,
-        userId: session.user.id,
-        status: "in_progress"
-      },
-      orderBy: { createdAt: "desc" }
-    })
-
-    // Get projects for review
-    const projects = await prisma.project.findMany({
-      where: {
-        tenantId,
-        userId: session.user.id,
-        status: { in: ["active", "someday"] }
-      },
-      include: {
-        area: {
-          select: { id: true, name: true }
-        },
-        tasks: {
-          where: { status: { not: "completed" } },
-          select: {
-            id: true,
-            title: true,
-            status: true,
-            priority: true,
-            dueDate: true,
-            completedAt: true,
-            createdAt: true,
-            updatedAt: true
+    // Get review data in parallel for better performance
+    const [activeReview, projects, areas, lastReview] = await Promise.all([
+      DatabaseConnection.withRetry(
+        () => prisma.weeklyReview.findFirst({
+          where: {
+            tenantId,
+            userId: session.user.id,
+            status: "in_progress"
           },
           orderBy: { createdAt: "desc" }
-        },
-        _count: {
-          select: {
-            tasks: {
-              where: { status: "completed" }
-            }
-          }
-        }
-      }
-    })
-
-    // Get areas for review
-    const areas = await prisma.area.findMany({
-      where: {
-        tenantId,
-        userId: session.user.id
-      },
-      include: {
-        projects: {
-          where: { status: { in: ["active", "someday"] } },
-          select: {
-            id: true,
-            name: true,
-            status: true,
-            createdAt: true,
+        }),
+        'get-active-review'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.project.findMany({
+          where: {
+            tenantId,
+            userId: session.user.id,
+            status: { in: ["active", "someday"] }
+          },
+          include: {
+            area: {
+              select: { id: true, name: true }
+            },
             tasks: {
               where: { status: { not: "completed" } },
-              select: { id: true }
+              select: {
+                id: true,
+                title: true,
+                status: true,
+                priority: true,
+                dueDate: true,
+                completedAt: true,
+                createdAt: true,
+                updatedAt: true
+              },
+              orderBy: { createdAt: "desc" }
             },
             _count: {
               select: {
@@ -100,33 +76,66 @@ export async function GET(request: NextRequest) {
               }
             }
           }
-        },
-        tasks: {
-          where: { status: { not: "completed" } },
-          select: {
-            id: true,
-            title: true,
-            status: true,
-            priority: true,
-            dueDate: true,
-            completedAt: true,
-            createdAt: true,
-            updatedAt: true
+        }),
+        'get-projects-for-review'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.area.findMany({
+          where: {
+            tenantId,
+            userId: session.user.id
           },
-          orderBy: { updatedAt: "desc" }
-        }
-      }
-    })
-
-    // Get last completed review
-    const lastReview = await prisma.weeklyReview.findFirst({
-      where: {
-        tenantId,
-        userId: session.user.id,
-        status: "completed"
-      },
-      orderBy: { completedAt: "desc" }
-    })
+          include: {
+            projects: {
+              where: { status: { in: ["active", "someday"] } },
+              select: {
+                id: true,
+                name: true,
+                status: true,
+                createdAt: true,
+                tasks: {
+                  where: { status: { not: "completed" } },
+                  select: { id: true }
+                },
+                _count: {
+                  select: {
+                    tasks: {
+                      where: { status: "completed" }
+                    }
+                  }
+                }
+              }
+            },
+            tasks: {
+              where: { status: { not: "completed" } },
+              select: {
+                id: true,
+                title: true,
+                status: true,
+                priority: true,
+                dueDate: true,
+                completedAt: true,
+                createdAt: true,
+                updatedAt: true
+              },
+              orderBy: { updatedAt: "desc" }
+            }
+          }
+        }),
+        'get-areas-for-review'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.weeklyReview.findFirst({
+          where: {
+            tenantId,
+            userId: session.user.id,
+            status: "completed"
+          },
+          orderBy: { completedAt: "desc" }
+        }),
+        'get-last-review'
+      )
+    ])
 
     // Calculate review data
     const oneWeekAgo = new Date()
@@ -283,13 +292,16 @@ export async function POST(request: NextRequest) {
     const validatedData = createReviewSchema.parse(body)
 
     // Check if there's already an active review
-    const activeReview = await prisma.weeklyReview.findFirst({
-      where: {
-        tenantId,
-        userId: session.user.id,
-        status: "in_progress"
-      }
-    })
+    const activeReview = await DatabaseConnection.withRetry(
+      () => prisma.weeklyReview.findFirst({
+        where: {
+          tenantId,
+          userId: session.user.id,
+          status: "in_progress"
+        }
+      }),
+      'check-active-review'
+    )
 
     if (activeReview) {
       return NextResponse.json(
@@ -299,19 +311,22 @@ export async function POST(request: NextRequest) {
     }
 
     // Create new review
-    const review = await prisma.weeklyReview.create({
-      data: {
-        tenantId,
-        userId: session.user.id,
-        status: "in_progress",
-        reviewData: {
-          projectsReviewed: [],
-          areasReviewed: [],
-          notes: validatedData.notes,
-          nextWeekFocus: validatedData.nextWeekFocus
+    const review = await DatabaseConnection.withRetry(
+      () => prisma.weeklyReview.create({
+        data: {
+          tenantId,
+          userId: session.user.id,
+          status: "in_progress",
+          reviewData: {
+            projectsReviewed: [],
+            areasReviewed: [],
+            notes: validatedData.notes,
+            nextWeekFocus: validatedData.nextWeekFocus
+          }
         }
-      }
-    })
+      }),
+      'create-weekly-review'
+    )
 
     return NextResponse.json({
       message: "Weekly review started",

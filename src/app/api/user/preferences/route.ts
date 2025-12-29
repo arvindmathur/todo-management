@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 const preferencesSchema = z.object({
   completedTaskRetention: z.union([
@@ -67,14 +68,17 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: {
-        id: true,
-        gtdEnabled: true,
-        preferences: true,
-      }
-    })
+    const user = await DatabaseConnection.withRetry(
+      () => prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: {
+          id: true,
+          gtdEnabled: true,
+          preferences: true,
+        }
+      }),
+      'get-user-preferences'
+    )
 
     if (!user) {
       return NextResponse.json(
@@ -115,13 +119,16 @@ export async function PUT(request: NextRequest) {
     const validatedData = preferencesSchema.parse(body)
 
     // Get current user data
-    const currentUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: {
-        preferences: true,
-        gtdEnabled: true,
-      }
-    })
+    const currentUser = await DatabaseConnection.withRetry(
+      () => prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: {
+          preferences: true,
+          gtdEnabled: true,
+        }
+      }),
+      'get-current-user-preferences'
+    )
 
     if (!currentUser) {
       return NextResponse.json(
@@ -201,15 +208,18 @@ export async function PUT(request: NextRequest) {
     }
 
     // Update user
-    const updatedUser = await prisma.user.update({
-      where: { id: session.user.id },
-      data: updateData,
-      select: {
-        id: true,
-        gtdEnabled: true,
-        preferences: true,
-      }
-    })
+    const updatedUser = await DatabaseConnection.withRetry(
+      () => prisma.user.update({
+        where: { id: session.user.id },
+        data: updateData,
+        select: {
+          id: true,
+          gtdEnabled: true,
+          preferences: true,
+        }
+      }),
+      'update-user-preferences'
+    )
 
     return NextResponse.json({
       message: "Preferences updated successfully",

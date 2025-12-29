@@ -3,6 +3,7 @@ import { Server as SocketIOServer } from "socket.io"
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 export interface SyncEvent {
   type: "task_created" | "task_updated" | "task_deleted" | "project_created" | "project_updated" | "project_deleted" | "context_created" | "context_updated" | "context_deleted" | "area_created" | "area_updated" | "area_deleted" | "inbox_created" | "inbox_updated" | "inbox_deleted"
@@ -138,18 +139,21 @@ class WebSocketManager {
     try {
       // For now, we'll assume the token is the session token
       // and look it up in the database
-      const session = await prisma.session.findUnique({
-        where: { sessionToken: token },
-        include: {
-          user: {
-            select: {
-              id: true,
-              tenantId: true,
-              email: true
+      const session = await DatabaseConnection.withRetry(
+        () => prisma.session.findUnique({
+          where: { sessionToken: token },
+          include: {
+            user: {
+              select: {
+                id: true,
+                tenantId: true,
+                email: true
+              }
             }
           }
-        }
-      })
+        }),
+        'verify-websocket-session'
+      )
 
       if (!session || session.expires < new Date()) {
         return null
@@ -172,50 +176,65 @@ class WebSocketManager {
     const since = new Date(timestamp)
 
     const [tasks, projects, contexts, areas, inboxItems] = await Promise.all([
-      prisma.task.findMany({
-        where: {
-          tenantId,
-          userId,
-          updatedAt: { gt: since }
-        },
-        include: {
-          project: { select: { id: true, name: true } },
-          context: { select: { id: true, name: true, icon: true } },
-          area: { select: { id: true, name: true, color: true } }
-        }
-      }),
-      prisma.project.findMany({
-        where: {
-          tenantId,
-          userId,
-          updatedAt: { gt: since }
-        },
-        include: {
-          area: { select: { id: true, name: true } },
-          tasks: { select: { id: true, status: true } }
-        }
-      }),
-      prisma.context.findMany({
-        where: {
-          tenantId,
-          userId,
-          createdAt: { gt: since }
-        }
-      }),
-      prisma.area.findMany({
-        where: {
-          tenantId,
-          userId,
-          createdAt: { gt: since }
-        }
-      }),
-      prisma.inboxItem.findMany({
-        where: {
-          tenantId,
-          userId,
-          createdAt: { gt: since }
-        }
-      })
+      DatabaseConnection.withRetry(
+        () => prisma.task.findMany({
+          where: {
+            tenantId,
+            userId,
+            updatedAt: { gt: since }
+          },
+          include: {
+            project: { select: { id: true, name: true } },
+            context: { select: { id: true, name: true, icon: true } },
+            area: { select: { id: true, name: true, color: true } }
+          }
+        }),
+        'get-task-changes-since'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.project.findMany({
+          where: {
+            tenantId,
+            userId,
+            updatedAt: { gt: since }
+          },
+          include: {
+            area: { select: { id: true, name: true } },
+            tasks: { select: { id: true, status: true } }
+          }
+        }),
+        'get-project-changes-since'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.context.findMany({
+          where: {
+            tenantId,
+            userId,
+            createdAt: { gt: since }
+          }
+        }),
+        'get-context-changes-since'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.area.findMany({
+          where: {
+            tenantId,
+            userId,
+            createdAt: { gt: since }
+          }
+        }),
+        'get-area-changes-since'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.inboxItem.findMany({
+          where: {
+            tenantId,
+            userId,
+            createdAt: { gt: since }
+          }
+        }),
+        'get-inbox-changes-since'
+      )
     ])
 
     return {

@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 import { auditLogger } from "@/lib/audit-logger"
 import { 
   withErrorHandling, 
@@ -50,24 +51,30 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
     }
   }
 
-  const inboxItems = await prisma.inboxItem.findMany({
-    where,
-    orderBy: [
-      { processed: "asc" }, // Unprocessed items first
-      { createdAt: "desc" } // Newest first
-    ],
-    take: filters.limit || 100,
-    skip: filters.offset || 0,
-  })
-
-  // Get count of unprocessed items for the counter
-  const unprocessedCount = await prisma.inboxItem.count({
-    where: {
-      userId: session.user.id,
-      tenantId: session.user.tenantId,
-      processed: false,
-    }
-  })
+  const [inboxItems, unprocessedCount] = await Promise.all([
+    DatabaseConnection.withRetry(
+      () => prisma.inboxItem.findMany({
+        where,
+        orderBy: [
+          { processed: "asc" }, // Unprocessed items first
+          { createdAt: "desc" } // Newest first
+        ],
+        take: filters.limit || 100,
+        skip: filters.offset || 0,
+      }),
+      'get-inbox-items'
+    ),
+    DatabaseConnection.withRetry(
+      () => prisma.inboxItem.count({
+        where: {
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+          processed: false,
+        }
+      }),
+      'count-unprocessed-inbox'
+    )
+  ])
 
   // Log data access
   await auditLogger.logDataAccess(
@@ -94,23 +101,29 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   const body = await request.json()
   const validatedData = validateRequest(createInboxItemSchema, body, "Inbox item creation")
 
-  const inboxItem = await prisma.inboxItem.create({
-    data: {
-      ...validatedData,
-      userId: session.user.id,
-      tenantId: session.user.tenantId,
-      processed: false,
-    }
-  })
-
-  // Get updated unprocessed count
-  const unprocessedCount = await prisma.inboxItem.count({
-    where: {
-      userId: session.user.id,
-      tenantId: session.user.tenantId,
-      processed: false,
-    }
-  })
+  const [inboxItem, unprocessedCount] = await Promise.all([
+    DatabaseConnection.withRetry(
+      () => prisma.inboxItem.create({
+        data: {
+          ...validatedData,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+          processed: false,
+        }
+      }),
+      'create-inbox-item'
+    ),
+    DatabaseConnection.withRetry(
+      () => prisma.inboxItem.count({
+        where: {
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+          processed: false,
+        }
+      }),
+      'count-unprocessed-after-create'
+    )
+  ])
 
   // Log inbox item creation
   await auditLogger.logCreate(

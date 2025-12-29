@@ -3,6 +3,7 @@ import { z } from "zod"
 import jwt from "jsonwebtoken"
 import nodemailer from "nodemailer"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 const resetRequestSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -20,9 +21,12 @@ export async function POST(request: NextRequest) {
     const { email } = resetRequestSchema.parse(body)
 
     // Check if user exists
-    const user = await prisma.user.findUnique({
-      where: { email }
-    })
+    const user = await DatabaseConnection.withRetry(
+      () => prisma.user.findUnique({
+        where: { email }
+      }),
+      'find-user-for-reset'
+    )
 
     if (!user) {
       // Don't reveal if user exists or not for security
@@ -106,10 +110,13 @@ export async function PUT(request: NextRequest) {
     const hashedPassword = await bcrypt.hash(password, 12)
 
     // Update user password
-    await prisma.user.update({
-      where: { id: decoded.userId },
-      data: { password: hashedPassword }
-    })
+    await DatabaseConnection.withRetry(
+      () => prisma.user.update({
+        where: { id: decoded.userId },
+        data: { password: hashedPassword }
+      }),
+      'update-user-password'
+    )
 
     return NextResponse.json(
       { message: "Password reset successfully" },

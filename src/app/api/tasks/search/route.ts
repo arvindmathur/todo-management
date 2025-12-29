@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 const searchSchema = z.object({
   q: z.string().min(1, "Search query is required"),
@@ -26,28 +27,29 @@ export async function GET(request: NextRequest) {
     const { q: query, limit, offset } = searchSchema.parse(Object.fromEntries(searchParams))
 
     // Perform full-text search across title, description, and tags
-    const tasks = await prisma.task.findMany({
-      where: {
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-        OR: [
-          {
-            title: {
-              contains: query,
-              mode: 'insensitive'
-            }
-          },
-          {
-            description: {
-              contains: query,
-              mode: 'insensitive'
-            }
-          },
-          {
-            tags: {
-              has: query
-            }
-          },
+    const tasks = await DatabaseConnection.withRetry(
+      () => prisma.task.findMany({
+        where: {
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+          OR: [
+            {
+              title: {
+                contains: query,
+                mode: 'insensitive'
+              }
+            },
+            {
+              description: {
+                contains: query,
+                mode: 'insensitive'
+              }
+            },
+            {
+              tags: {
+                has: query
+              }
+            },
           {
             project: {
               name: {
@@ -92,7 +94,9 @@ export async function GET(request: NextRequest) {
       ],
       take: limit || 50,
       skip: offset || 0,
-    })
+    }),
+    'search-tasks'
+  )
 
     return NextResponse.json({ 
       tasks,

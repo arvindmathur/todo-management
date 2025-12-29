@@ -1,4 +1,5 @@
 import { prisma } from "./prisma"
+import { DatabaseConnection } from "./db-connection"
 import { NextRequest } from "next/server"
 
 export interface AuditLogEntry {
@@ -23,19 +24,22 @@ export interface RequestMetadata {
 class AuditLogger {
   async log(entry: AuditLogEntry): Promise<void> {
     try {
-      await prisma.auditLog.create({
-        data: {
-          tenantId: entry.tenantId,
-          userId: entry.userId,
-          action: entry.action,
-          entityType: entry.entityType,
-          entityId: entry.entityId,
-          oldValues: entry.oldValues,
-          newValues: entry.newValues,
-          metadata: entry.metadata,
-          timestamp: new Date()
-        }
-      })
+      await DatabaseConnection.withRetry(
+        () => prisma.auditLog.create({
+          data: {
+            tenantId: entry.tenantId,
+            userId: entry.userId,
+            action: entry.action,
+            entityType: entry.entityType,
+            entityId: entry.entityId,
+            oldValues: entry.oldValues,
+            newValues: entry.newValues,
+            metadata: entry.metadata,
+            timestamp: new Date()
+          }
+        }),
+        'create-audit-log'
+      )
     } catch (error) {
       console.error("Failed to write audit log:", error)
       // Don't throw - audit logging should not break the main operation
@@ -249,22 +253,28 @@ class AuditLogger {
     }
 
     const [logs, totalCount] = await Promise.all([
-      prisma.auditLog.findMany({
-        where,
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true
+      DatabaseConnection.withRetry(
+        () => prisma.auditLog.findMany({
+          where,
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
             }
-          }
-        },
-        orderBy: { timestamp: "desc" },
-        take: limit,
-        skip: offset
-      }),
-      prisma.auditLog.count({ where })
+          },
+          orderBy: { timestamp: "desc" },
+          take: limit,
+          skip: offset
+        }),
+        'get-audit-logs'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.auditLog.count({ where }),
+        'count-audit-logs'
+      )
     ])
 
     return {
@@ -294,35 +304,50 @@ class AuditLogger {
       userStats,
       securityEvents
     ] = await Promise.all([
-      prisma.auditLog.count({ where }),
+      DatabaseConnection.withRetry(
+        () => prisma.auditLog.count({ where }),
+        'count-total-audit-logs'
+      ),
       
-      prisma.auditLog.groupBy({
-        by: ["action"],
-        where,
-        _count: { action: true },
-        orderBy: { _count: { action: "desc" } }
-      }),
+      DatabaseConnection.withRetry(
+        () => prisma.auditLog.groupBy({
+          by: ["action"],
+          where,
+          _count: { action: true },
+          orderBy: { _count: { action: "desc" } }
+        }),
+        'group-audit-logs-by-action'
+      ),
       
-      prisma.auditLog.groupBy({
-        by: ["entityType"],
-        where: { ...where, entityType: { not: null } },
-        _count: { entityType: true },
-        orderBy: { _count: { entityType: "desc" } }
-      }),
+      DatabaseConnection.withRetry(
+        () => prisma.auditLog.groupBy({
+          by: ["entityType"],
+          where: { ...where, entityType: { not: null } },
+          _count: { entityType: true },
+          orderBy: { _count: { entityType: "desc" } }
+        }),
+        'group-audit-logs-by-entity'
+      ),
       
-      prisma.auditLog.groupBy({
-        by: ["userId"],
-        where: { ...where, userId: { not: null } },
-        _count: { userId: true },
-        orderBy: { _count: { userId: "desc" } }
-      }),
+      DatabaseConnection.withRetry(
+        () => prisma.auditLog.groupBy({
+          by: ["userId"],
+          where: { ...where, userId: { not: null } },
+          _count: { userId: true },
+          orderBy: { _count: { userId: "desc" } }
+        }),
+        'group-audit-logs-by-user'
+      ),
       
-      prisma.auditLog.count({
-        where: {
-          ...where,
-          action: { startsWith: "SECURITY_" }
-        }
-      })
+      DatabaseConnection.withRetry(
+        () => prisma.auditLog.count({
+          where: {
+            ...where,
+            action: { startsWith: "SECURITY_" }
+          }
+        }),
+        'count-security-events'
+      )
     ])
 
     return {

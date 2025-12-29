@@ -206,10 +206,13 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   if (validatedData.reminderEnabled && dueDate && validatedData.reminderDays) {
     try {
       // Get user preferences for timezone
-      const user = await prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: { preferences: true }
-      });
+      const user = await DatabaseConnection.withRetry(
+        () => prisma.user.findUnique({
+          where: { id: session.user.id },
+          select: { preferences: true }
+        }),
+        'get-user-timezone-preferences'
+      );
       
       const preferences = (user?.preferences as any) || {};
       const userTimezone = preferences.timezone || 'UTC';

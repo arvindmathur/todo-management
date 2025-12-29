@@ -1,5 +1,6 @@
 import { Task, TaskPriority, TaskStatus } from "@/types/task"
 import { prisma } from "./prisma"
+import { DatabaseConnection } from "./db-connection"
 
 // Project-related types
 export interface Project {
@@ -354,21 +355,24 @@ export function getProjectNextAction(tasks: Task[]): Task | null {
 export async function updateProjectCompletion(projectId: string, userId: string, tenantId: string): Promise<void> {
   try {
     // Get project with tasks
-    const project = await prisma.project.findFirst({
-      where: {
-        id: projectId,
-        userId,
-        tenantId,
-      },
-      include: {
-        tasks: {
-          select: {
-            id: true,
-            status: true,
+    const project = await DatabaseConnection.withRetry(
+      () => prisma.project.findFirst({
+        where: {
+          id: projectId,
+          userId,
+          tenantId,
+        },
+        include: {
+          tasks: {
+            select: {
+              id: true,
+              status: true,
+            }
           }
         }
-      }
-    })
+      }),
+      'get-project-for-completion-update'
+    )
 
     if (!project) return
 
@@ -376,23 +380,29 @@ export async function updateProjectCompletion(projectId: string, userId: string,
     
     // Auto-complete project if all tasks are done and project is still active
     if (shouldComplete && project.status === "active") {
-      await prisma.project.update({
-        where: { id: projectId },
-        data: { 
-          status: "completed",
-          updatedAt: new Date()
-        }
-      })
+      await DatabaseConnection.withRetry(
+        () => prisma.project.update({
+          where: { id: projectId },
+          data: { 
+            status: "completed",
+            updatedAt: new Date()
+          }
+        }),
+        'complete-project'
+      )
     }
     // Reopen project if it was completed but now has active tasks
     else if (!shouldComplete && project.status === "completed") {
-      await prisma.project.update({
-        where: { id: projectId },
-        data: { 
-          status: "active",
-          updatedAt: new Date()
-        }
-      })
+      await DatabaseConnection.withRetry(
+        () => prisma.project.update({
+          where: { id: projectId },
+          data: { 
+            status: "active",
+            updatedAt: new Date()
+          }
+        }),
+        'reopen-project'
+      )
     }
   } catch (error) {
     console.error("Error updating project completion:", error)

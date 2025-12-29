@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 const updateContextSchema = z.object({
   name: z.string().min(1, "Context name is required").max(100, "Context name too long").optional(),
@@ -25,43 +26,46 @@ export async function GET(
       )
     }
 
-    const context = await prisma.context.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      },
-      include: {
-        tasks: {
-          where: {
-            status: "active" // Only include active tasks
-          },
-          select: {
-            id: true,
-            title: true,
-            description: true,
-            status: true,
-            priority: true,
-            dueDate: true,
-            createdAt: true,
-          },
-          orderBy: [
-            { priority: "desc" },
-            { dueDate: "asc" },
-            { createdAt: "desc" }
-          ]
+    const context = await DatabaseConnection.withRetry(
+      () => prisma.context.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
         },
-        _count: {
-          select: {
-            tasks: {
-              where: {
-                status: "active"
+        include: {
+          tasks: {
+            where: {
+              status: "active" // Only include active tasks
+            },
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              status: true,
+              priority: true,
+              dueDate: true,
+              createdAt: true,
+            },
+            orderBy: [
+              { priority: "desc" },
+              { dueDate: "asc" },
+              { createdAt: "desc" }
+            ]
+          },
+          _count: {
+            select: {
+              tasks: {
+                where: {
+                  status: "active"
+                }
               }
             }
           }
         }
-      }
-    })
+      }),
+      'get-context-by-id'
+    )
 
     if (!context) {
       return NextResponse.json(
@@ -99,13 +103,16 @@ export async function PUT(
     const validatedData = updateContextSchema.parse(body)
 
     // Check if context exists and belongs to user
-    const existingContext = await prisma.context.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const existingContext = await DatabaseConnection.withRetry(
+      () => prisma.context.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'check-context-exists-for-update'
+    )
 
     if (!existingContext) {
       return NextResponse.json(
@@ -116,14 +123,17 @@ export async function PUT(
 
     // Check if new name conflicts with existing context (if name is being changed)
     if (validatedData.name && validatedData.name !== existingContext.name) {
-      const nameConflict = await prisma.context.findFirst({
-        where: {
-          name: validatedData.name,
-          userId: session.user.id,
-          tenantId: session.user.tenantId,
-          id: { not: params.id }
-        }
-      })
+      const nameConflict = await DatabaseConnection.withRetry(
+        () => prisma.context.findFirst({
+          where: {
+            name: validatedData.name,
+            userId: session.user.id,
+            tenantId: session.user.tenantId,
+            id: { not: params.id }
+          }
+        }),
+        'check-context-name-conflict'
+      )
 
       if (nameConflict) {
         return NextResponse.json(
@@ -133,21 +143,24 @@ export async function PUT(
       }
     }
 
-    const context = await prisma.context.update({
-      where: { id: params.id },
-      data: validatedData,
-      include: {
-        _count: {
-          select: {
-            tasks: {
-              where: {
-                status: "active"
+    const context = await DatabaseConnection.withRetry(
+      () => prisma.context.update({
+        where: { id: params.id },
+        data: validatedData,
+        include: {
+          _count: {
+            select: {
+              tasks: {
+                where: {
+                  status: "active"
+                }
               }
             }
           }
         }
-      }
-    })
+      }),
+      'update-context'
+    )
 
     return NextResponse.json({
       message: "Context updated successfully",
@@ -185,18 +198,21 @@ export async function DELETE(
     }
 
     // Check if context exists and belongs to user
-    const existingContext = await prisma.context.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      },
-      include: {
-        tasks: {
-          select: { id: true }
+    const existingContext = await DatabaseConnection.withRetry(
+      () => prisma.context.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        },
+        include: {
+          tasks: {
+            select: { id: true }
+          }
         }
-      }
-    })
+      }),
+      'get-context-for-delete'
+    )
 
     if (!existingContext) {
       return NextResponse.json(
@@ -205,24 +221,37 @@ export async function DELETE(
       )
     }
 
-    // Unassign context from all associated tasks before deletion
+    // Unassign context from all associated tasks before deletion and delete context in parallel
+    const operations = []
+    
     if (existingContext.tasks.length > 0) {
-      await prisma.task.updateMany({
-        where: {
-          contextId: params.id,
-          userId: session.user.id,
-          tenantId: session.user.tenantId,
-        },
-        data: {
-          contextId: null
-        }
-      })
+      operations.push(
+        DatabaseConnection.withRetry(
+          () => prisma.task.updateMany({
+            where: {
+              contextId: params.id,
+              userId: session.user.id,
+              tenantId: session.user.tenantId,
+            },
+            data: {
+              contextId: null
+            }
+          }),
+          'unassign-context-from-tasks'
+        )
+      )
     }
 
-    // Delete the context
-    await prisma.context.delete({
-      where: { id: params.id }
-    })
+    operations.push(
+      DatabaseConnection.withRetry(
+        () => prisma.context.delete({
+          where: { id: params.id }
+        }),
+        'delete-context'
+      )
+    )
+
+    await Promise.all(operations)
 
     return NextResponse.json({
       message: "Context deleted successfully",

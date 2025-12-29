@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 // Get completed tasks statistics
 export async function GET(request: NextRequest) {
@@ -43,103 +44,140 @@ export async function GET(request: NextRequest) {
       completedByContext
     ] = await Promise.all([
       // Total completed tasks
-      prisma.task.count({ where: baseWhere }),
+      DatabaseConnection.withRetry(
+        () => prisma.task.count({ where: baseWhere }),
+        'count-total-completed'
+      ),
       
       // Recent completed tasks (last 90 days)
-      prisma.task.count({
-        where: {
-          ...baseWhere,
-          completedAt: { gte: ninetyDaysAgo }
-        }
-      }),
+      DatabaseConnection.withRetry(
+        () => prisma.task.count({
+          where: {
+            ...baseWhere,
+            completedAt: { gte: ninetyDaysAgo }
+          }
+        }),
+        'count-recent-completed'
+      ),
       
       // Archived completed tasks (older than 90 days)
-      prisma.task.count({
-        where: {
-          ...baseWhere,
-          completedAt: { lt: ninetyDaysAgo }
-        }
-      }),
+      DatabaseConnection.withRetry(
+        () => prisma.task.count({
+          where: {
+            ...baseWhere,
+            completedAt: { lt: ninetyDaysAgo }
+          }
+        }),
+        'count-archived-completed'
+      ),
       
       // This week completed
-      prisma.task.count({
-        where: {
-          ...baseWhere,
-          completedAt: { gte: thisWeekStart }
-        }
-      }),
+      DatabaseConnection.withRetry(
+        () => prisma.task.count({
+          where: {
+            ...baseWhere,
+            completedAt: { gte: thisWeekStart }
+          }
+        }),
+        'count-week-completed'
+      ),
       
       // This month completed
-      prisma.task.count({
-        where: {
-          ...baseWhere,
-          completedAt: { gte: thisMonthStart }
-        }
-      }),
+      DatabaseConnection.withRetry(
+        () => prisma.task.count({
+          where: {
+            ...baseWhere,
+            completedAt: { gte: thisMonthStart }
+          }
+        }),
+        'count-month-completed'
+      ),
       
       // Completed by project
-      prisma.task.groupBy({
-        by: ['projectId'],
-        where: {
-          ...baseWhere,
-          projectId: { not: null }
-        },
-        _count: { id: true }
-      }),
+      DatabaseConnection.withRetry(
+        () => prisma.task.groupBy({
+          by: ['projectId'],
+          where: {
+            ...baseWhere,
+            projectId: { not: null }
+          },
+          _count: { id: true }
+        }),
+        'group-by-project'
+      ),
       
       // Completed by area
-      prisma.task.groupBy({
-        by: ['areaId'],
-        where: {
-          ...baseWhere,
-          areaId: { not: null }
-        },
-        _count: { id: true }
-      }),
+      DatabaseConnection.withRetry(
+        () => prisma.task.groupBy({
+          by: ['areaId'],
+          where: {
+            ...baseWhere,
+            areaId: { not: null }
+          },
+          _count: { id: true }
+        }),
+        'group-by-area'
+      ),
       
       // Completed by context
-      prisma.task.groupBy({
-        by: ['contextId'],
-        where: {
-          ...baseWhere,
-          contextId: { not: null }
-        },
-        _count: { id: true }
-      })
+      DatabaseConnection.withRetry(
+        () => prisma.task.groupBy({
+          by: ['contextId'],
+          where: {
+            ...baseWhere,
+            contextId: { not: null }
+          },
+          _count: { id: true }
+        }),
+        'group-by-context'
+      )
     ])
 
-    // Get project names for completed by project
+    // Get entity names in parallel for better performance
     const projectIds = completedByProject.map(p => p.projectId).filter((id): id is string => id !== null)
-    const projects = projectIds.length > 0 ? await prisma.project.findMany({
-      where: {
-        id: { in: projectIds },
-        tenantId: session.user.tenantId,
-        userId: session.user.id
-      },
-      select: { id: true, name: true }
-    }) : []
-
-    // Get area names for completed by area
     const areaIds = completedByArea.map(a => a.areaId).filter((id): id is string => id !== null)
-    const areas = areaIds.length > 0 ? await prisma.area.findMany({
-      where: {
-        id: { in: areaIds },
-        tenantId: session.user.tenantId,
-        userId: session.user.id
-      },
-      select: { id: true, name: true, color: true }
-    }) : []
-
-    // Get context names for completed by context
     const contextIds = completedByContext.map(c => c.contextId).filter((id): id is string => id !== null)
-    const contexts = contextIds.length > 0 ? await prisma.context.findMany({
-      where: {
-        id: { in: contextIds },
-        tenantId: session.user.tenantId,
-        userId: session.user.id
-      },
-      select: { id: true, name: true, icon: true }
-    }) : []
+
+    const [projects, areas, contexts] = await Promise.all([
+      // Get project names for completed by project
+      projectIds.length > 0 ? DatabaseConnection.withRetry(
+        () => prisma.project.findMany({
+          where: {
+            id: { in: projectIds },
+            tenantId: session.user.tenantId,
+            userId: session.user.id
+          },
+          select: { id: true, name: true }
+        }),
+        'get-project-names'
+      ) : Promise.resolve([]),
+
+      // Get area names for completed by area
+      areaIds.length > 0 ? DatabaseConnection.withRetry(
+        () => prisma.area.findMany({
+          where: {
+            id: { in: areaIds },
+            tenantId: session.user.tenantId,
+            userId: session.user.id
+          },
+          select: { id: true, name: true, color: true }
+        }),
+        'get-area-names'
+      ) : Promise.resolve([]),
+
+      // Get context names for completed by context
+      contextIds.length > 0 ? DatabaseConnection.withRetry(
+        () => prisma.context.findMany({
+          where: {
+            id: { in: contextIds },
+            tenantId: session.user.tenantId,
+            userId: session.user.id
+          },
+          select: { id: true, name: true, icon: true }
+        }),
+        'get-context-names'
+      ) : Promise.resolve([])
+    ])
 
     // Format the grouped data
     const completedByProjectFormatted = completedByProject.map(item => {

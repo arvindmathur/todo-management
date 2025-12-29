@@ -3,6 +3,7 @@ import { PrismaAdapter } from "@next-auth/prisma-adapter"
 import CredentialsProvider from "next-auth/providers/credentials"
 import bcrypt from "bcryptjs"
 import { prisma } from "./prisma"
+import { DatabaseConnection } from "./db-connection"
 import { auditLogger } from "./audit-logger"
 
 export const authOptions: NextAuthOptions = {
@@ -19,11 +20,14 @@ export const authOptions: NextAuthOptions = {
           return null
         }
 
-        const user = await prisma.user.findUnique({
-          where: {
-            email: credentials.email
-          }
-        })
+        const user = await DatabaseConnection.withRetry(
+          () => prisma.user.findUnique({
+            where: {
+              email: credentials.email
+            }
+          }),
+          'auth-find-user'
+        )
 
         if (!user || !user.password) {
           // Log failed login attempt

@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 import { auditLogger } from "@/lib/audit-logger"
 import { 
   withErrorHandling, 
@@ -59,26 +60,29 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
     where.isDefault = filters.isDefault
   }
 
-  const contexts = await prisma.context.findMany({
-    where,
-    include: {
-      _count: {
-        select: {
-          tasks: {
-            where: {
-              status: "active" // Only count active tasks
+  const contexts = await DatabaseConnection.withRetry(
+    () => prisma.context.findMany({
+      where,
+      include: {
+        _count: {
+          select: {
+            tasks: {
+              where: {
+                status: "active" // Only count active tasks
+              }
             }
           }
         }
-      }
-    },
-    orderBy: [
-      { isDefault: "desc" }, // Default contexts first
-      { name: "asc" }
-    ],
-    take: filters.limit || 100,
-    skip: filters.offset || 0,
-  })
+      },
+      orderBy: [
+        { isDefault: "desc" }, // Default contexts first
+        { name: "asc" }
+      ],
+      take: filters.limit || 100,
+      skip: filters.offset || 0,
+    }),
+    'get-contexts'
+  )
 
   // Log data access
   await auditLogger.logDataAccess(
@@ -102,37 +106,43 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   const validatedData = validateRequest(createContextSchema, body, "Context creation")
 
   // Check if context with same name already exists for this user
-  const existingContext = await prisma.context.findFirst({
-    where: {
-      name: validatedData.name,
-      userId: session.user.id,
-      tenantId: session.user.tenantId,
-    }
-  })
+  const existingContext = await DatabaseConnection.withRetry(
+    () => prisma.context.findFirst({
+      where: {
+        name: validatedData.name,
+        userId: session.user.id,
+        tenantId: session.user.tenantId,
+      }
+    }),
+    'check-context-exists'
+  )
 
   if (existingContext) {
     throw new ConflictError("Context with this name already exists")
   }
 
-  const context = await prisma.context.create({
-    data: {
-      ...validatedData,
-      userId: session.user.id,
-      tenantId: session.user.tenantId,
-      isDefault: false, // User-created contexts are not default
-    },
-    include: {
-      _count: {
-        select: {
-          tasks: {
-            where: {
-              status: "active"
+  const context = await DatabaseConnection.withRetry(
+    () => prisma.context.create({
+      data: {
+        ...validatedData,
+        userId: session.user.id,
+        tenantId: session.user.tenantId,
+        isDefault: false, // User-created contexts are not default
+      },
+      include: {
+        _count: {
+          select: {
+            tasks: {
+              where: {
+                status: "active"
+              }
             }
           }
         }
       }
-    }
-  })
+    }),
+    'create-context'
+  )
 
   // Log context creation
   await auditLogger.logCreate(
@@ -162,13 +172,16 @@ export const PUT = withErrorHandling(async (request: NextRequest) => {
   requireAuth(session)
 
   // Check if user already has default contexts
-  const existingContexts = await prisma.context.findMany({
-    where: {
-      userId: session.user.id,
-      tenantId: session.user.tenantId,
-      isDefault: true,
-    }
-  })
+  const existingContexts = await DatabaseConnection.withRetry(
+    () => prisma.context.findMany({
+      where: {
+        userId: session.user.id,
+        tenantId: session.user.tenantId,
+        isDefault: true,
+      }
+    }),
+    'check-default-contexts'
+  )
 
   if (existingContexts.length > 0) {
     return NextResponse.json(
@@ -179,28 +192,31 @@ export const PUT = withErrorHandling(async (request: NextRequest) => {
     )
   }
 
-  // Create default contexts
-  const contexts = await Promise.all(
-    DEFAULT_CONTEXTS.map(contextData =>
-      prisma.context.create({
-        data: {
-          ...contextData,
-          userId: session.user.id,
-          tenantId: session.user.tenantId,
-        },
-        include: {
-          _count: {
-            select: {
-              tasks: {
-                where: {
-                  status: "active"
+  // Create default contexts using batch operations for efficiency
+  const contexts = await DatabaseConnection.withRetry(
+    () => Promise.all(
+      DEFAULT_CONTEXTS.map(contextData =>
+        prisma.context.create({
+          data: {
+            ...contextData,
+            userId: session.user.id,
+            tenantId: session.user.tenantId,
+          },
+          include: {
+            _count: {
+              select: {
+                tasks: {
+                  where: {
+                    status: "active"
+                  }
                 }
               }
             }
           }
-        }
-      })
-    )
+        })
+      )
+    ),
+    'create-default-contexts'
   )
 
   // Log default contexts creation

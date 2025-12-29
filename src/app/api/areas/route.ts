@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 const createAreaSchema = z.object({
   name: z.string().min(1, "Area name is required").max(100, "Area name too long"),
@@ -45,30 +46,33 @@ export async function GET(request: NextRequest) {
       ]
     }
 
-    const areas = await prisma.area.findMany({
-      where,
-      include: {
-        _count: {
-          select: {
-            tasks: {
-              where: {
-                status: "active" // Only count active tasks
-              }
-            },
-            projects: {
-              where: {
-                status: "active" // Only count active projects
+    const areas = await DatabaseConnection.withRetry(
+      () => prisma.area.findMany({
+        where,
+        include: {
+          _count: {
+            select: {
+              tasks: {
+                where: {
+                  status: "active" // Only count active tasks
+                }
+              },
+              projects: {
+                where: {
+                  status: "active" // Only count active projects
+                }
               }
             }
           }
-        }
-      },
-      orderBy: [
-        { name: "asc" }
-      ],
-      take: filters.limit || 100,
-      skip: filters.offset || 0,
-    })
+        },
+        orderBy: [
+          { name: "asc" }
+        ],
+        take: filters.limit || 100,
+        skip: filters.offset || 0,
+      }),
+      'get-areas'
+    )
 
     return NextResponse.json({ areas })
   } catch (error) {
@@ -103,13 +107,16 @@ export async function POST(request: NextRequest) {
     const validatedData = createAreaSchema.parse(body)
 
     // Check if area with same name already exists for this user
-    const existingArea = await prisma.area.findFirst({
-      where: {
-        name: validatedData.name,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const existingArea = await DatabaseConnection.withRetry(
+      () => prisma.area.findFirst({
+        where: {
+          name: validatedData.name,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'check-area-exists'
+    )
 
     if (existingArea) {
       return NextResponse.json(
@@ -118,29 +125,32 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const area = await prisma.area.create({
-      data: {
-        ...validatedData,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      },
-      include: {
-        _count: {
-          select: {
-            tasks: {
-              where: {
-                status: "active"
-              }
-            },
-            projects: {
-              where: {
-                status: "active"
+    const area = await DatabaseConnection.withRetry(
+      () => prisma.area.create({
+        data: {
+          ...validatedData,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        },
+        include: {
+          _count: {
+            select: {
+              tasks: {
+                where: {
+                  status: "active"
+                }
+              },
+              projects: {
+                where: {
+                  status: "active"
+                }
               }
             }
           }
         }
-      }
-    })
+      }),
+      'create-area'
+    )
 
     return NextResponse.json(
       { 

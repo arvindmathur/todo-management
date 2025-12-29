@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 // Bulk delete completed tasks
 export async function DELETE(request: NextRequest) {
@@ -42,7 +43,10 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Get count of tasks to be deleted for confirmation
-    const tasksToDelete = await prisma.task.count({ where })
+    const tasksToDelete = await DatabaseConnection.withRetry(
+      () => prisma.task.count({ where }),
+      'count-tasks-to-delete'
+    )
 
     if (tasksToDelete === 0) {
       return NextResponse.json({
@@ -52,7 +56,10 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete the tasks
-    const result = await prisma.task.deleteMany({ where })
+    const result = await DatabaseConnection.withRetry(
+      () => prisma.task.deleteMany({ where }),
+      'delete-completed-tasks'
+    )
 
     return NextResponse.json({
       message: `Successfully deleted ${result.count} completed tasks`,

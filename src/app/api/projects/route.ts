@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
+import { BatchOperations } from "@/lib/db-batch-operations"
 import { auditLogger } from "@/lib/audit-logger"
 import { 
   withErrorHandling, 
@@ -51,40 +53,43 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
     where.areaId = filters.areaId
   }
 
-  const projects = await prisma.project.findMany({
-    where,
-    include: {
-      area: {
-        select: { id: true, name: true }
-      },
-      tasks: {
-        select: {
-          id: true,
-          title: true,
-          status: true,
-          priority: true,
-          dueDate: true,
-          completedAt: true,
+  const projects = await DatabaseConnection.withRetry(
+    () => prisma.project.findMany({
+      where,
+      include: {
+        area: {
+          select: { id: true, name: true }
         },
-        orderBy: [
-          { priority: "desc" },
-          { dueDate: "asc" },
-          { createdAt: "desc" }
-        ]
-      },
-      _count: {
-        select: {
-          tasks: true
+        tasks: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            priority: true,
+            dueDate: true,
+            completedAt: true,
+          },
+          orderBy: [
+            { priority: "desc" },
+            { dueDate: "asc" },
+            { createdAt: "desc" }
+          ]
+        },
+        _count: {
+          select: {
+            tasks: true
+          }
         }
-      }
-    },
-    orderBy: [
-      { status: "asc" }, // Active projects first
-      { createdAt: "desc" }
-    ],
-    take: filters.limit || 100,
-    skip: filters.offset || 0,
-  })
+      },
+      orderBy: [
+        { status: "asc" }, // Active projects first
+        { createdAt: "desc" }
+      ],
+      take: filters.limit || 100,
+      skip: filters.offset || 0,
+    }),
+    'get-projects'
+  )
 
   // Calculate progress for each project
   const projectsWithProgress = projects.map(project => {
@@ -126,45 +131,48 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   const body = await request.json()
   const validatedData = validateRequest(createProjectSchema, body, "Project creation")
 
-  // Validate area belongs to user if provided
+  // Validate area belongs to user if provided using batch operations
   if (validatedData.areaId) {
-    const area = await prisma.area.findFirst({
-      where: {
-        id: validatedData.areaId,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
-    requireResource(area, "Area")
+    const validation = await BatchOperations.validateEntities(
+      session.user.tenantId,
+      session.user.id,
+      { areaIds: [validatedData.areaId] }
+    )
+    if (!validation.validAreas.has(validatedData.areaId)) {
+      requireResource(null, "Area")
+    }
   }
 
-  const project = await prisma.project.create({
-    data: {
-      ...validatedData,
-      userId: session.user.id,
-      tenantId: session.user.tenantId,
-    },
-    include: {
-      area: {
-        select: { id: true, name: true }
+  const project = await DatabaseConnection.withRetry(
+    () => prisma.project.create({
+      data: {
+        ...validatedData,
+        userId: session.user.id,
+        tenantId: session.user.tenantId,
       },
-      tasks: {
-        select: {
-          id: true,
-          title: true,
-          status: true,
-          priority: true,
-          dueDate: true,
-          completedAt: true,
-        }
-      },
-      _count: {
-        select: {
-          tasks: true
+      include: {
+        area: {
+          select: { id: true, name: true }
+        },
+        tasks: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            priority: true,
+            dueDate: true,
+            completedAt: true,
+          }
+        },
+        _count: {
+          select: {
+            tasks: true
+          }
         }
       }
-    }
-  })
+    }),
+    'create-project'
+  )
 
   // Calculate initial progress
   const totalTasks = project.tasks.length

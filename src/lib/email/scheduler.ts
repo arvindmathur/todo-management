@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { DatabaseConnection } from '@/lib/db-connection';
 import { UserPreferences } from '@/hooks/useUserPreferences';
 
 export interface ScheduleOptions {
@@ -27,16 +28,19 @@ export class NotificationScheduler {
     // Calculate next 6am in user's timezone
     const scheduledFor = this.calculateNext6AM(userTimezone, frequency);
 
-    const notification = await prisma.emailNotification.create({
-      data: {
-        tenantId,
-        userId,
-        type: 'summary',
-        frequency,
-        scheduledFor,
-        status: 'pending'
-      }
-    });
+    const notification = await DatabaseConnection.withRetry(
+      () => prisma.emailNotification.create({
+        data: {
+          tenantId,
+          userId,
+          type: 'summary',
+          frequency,
+          scheduledFor,
+          status: 'pending'
+        }
+      }),
+      'schedule-summary-email'
+    );
 
     return notification.id;
   }
@@ -64,16 +68,19 @@ export class NotificationScheduler {
       throw new Error('Reminder time has already passed');
     }
 
-    const notification = await prisma.emailNotification.create({
-      data: {
-        tenantId,
-        userId,
-        type: 'reminder',
-        taskId,
-        scheduledFor,
-        status: 'pending'
-      }
-    });
+    const notification = await DatabaseConnection.withRetry(
+      () => prisma.emailNotification.create({
+        data: {
+          tenantId,
+          userId,
+          type: 'reminder',
+          taskId,
+          scheduledFor,
+          status: 'pending'
+        }
+      }),
+      'schedule-task-reminder'
+    );
 
     return notification.id;
   }
@@ -82,15 +89,18 @@ export class NotificationScheduler {
    * Cancel notifications for a specific task
    */
   static async cancelTaskNotifications(taskId: string): Promise<number> {
-    const result = await prisma.emailNotification.updateMany({
-      where: {
-        taskId,
-        status: 'pending'
-      },
-      data: {
-        status: 'cancelled'
-      }
-    });
+    const result = await DatabaseConnection.withRetry(
+      () => prisma.emailNotification.updateMany({
+        where: {
+          taskId,
+          status: 'pending'
+        },
+        data: {
+          status: 'cancelled'
+        }
+      }),
+      'cancel-task-notifications'
+    );
 
     return result.count;
   }
@@ -108,12 +118,15 @@ export class NotificationScheduler {
       where.type = type;
     }
 
-    const result = await prisma.emailNotification.updateMany({
-      where,
-      data: {
-        status: 'cancelled'
-      }
-    });
+    const result = await DatabaseConnection.withRetry(
+      () => prisma.emailNotification.updateMany({
+        where,
+        data: {
+          status: 'cancelled'
+        }
+      }),
+      'cancel-user-notifications'
+    );
 
     return result.count;
   }
@@ -194,29 +207,32 @@ export class NotificationScheduler {
   }>> {
     const now = new Date();
 
-    const notifications = await prisma.emailNotification.findMany({
-      where: {
-        status: 'pending',
-        scheduledFor: {
-          lte: now
-        }
-      },
-      include: {
-        user: {
-          select: {
-            name: true,
-            email: true,
-            preferences: true
+    const notifications = await DatabaseConnection.withRetry(
+      () => prisma.emailNotification.findMany({
+        where: {
+          status: 'pending',
+          scheduledFor: {
+            lte: now
           }
         },
-        // Include task details for reminder emails
-        ...(await this.getTaskInclude())
-      },
-      orderBy: {
-        scheduledFor: 'asc'
-      },
-      take: limit
-    });
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true,
+              preferences: true
+            }
+          },
+          // Include task details for reminder emails
+          ...(await this.getTaskInclude())
+        },
+        orderBy: {
+          scheduledFor: 'asc'
+        },
+        take: limit
+      }),
+      'get-pending-notifications'
+    );
 
     // Transform the result to match the expected type
     return notifications.map(notification => ({
@@ -241,13 +257,16 @@ export class NotificationScheduler {
    * Mark notification as being processed
    */
   static async markAsProcessing(notificationId: string): Promise<void> {
-    await prisma.emailNotification.update({
-      where: { id: notificationId },
-      data: { 
-        status: 'processing',
-        updatedAt: new Date()
-      }
-    });
+    await DatabaseConnection.withRetry(
+      () => prisma.emailNotification.update({
+        where: { id: notificationId },
+        data: { 
+          status: 'processing',
+          updatedAt: new Date()
+        }
+      }),
+      'mark-notification-processing'
+    );
   }
 
   /**
@@ -325,15 +344,18 @@ export class NotificationScheduler {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysOld);
 
-    const result = await prisma.emailNotification.deleteMany({
-      where: {
-        OR: [
-          { status: 'sent', sentAt: { lt: cutoffDate } },
-          { status: 'failed', updatedAt: { lt: cutoffDate } },
-          { status: 'cancelled', updatedAt: { lt: cutoffDate } }
-        ]
-      }
-    });
+    const result = await DatabaseConnection.withRetry(
+      () => prisma.emailNotification.deleteMany({
+        where: {
+          OR: [
+            { status: 'sent', sentAt: { lt: cutoffDate } },
+            { status: 'failed', updatedAt: { lt: cutoffDate } },
+            { status: 'cancelled', updatedAt: { lt: cutoffDate } }
+          ]
+        }
+      }),
+      'cleanup-old-notifications'
+    );
 
     return result.count;
   }

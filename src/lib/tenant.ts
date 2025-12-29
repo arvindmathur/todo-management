@@ -1,11 +1,15 @@
 import { prisma } from './prisma';
+import { DatabaseConnection } from './db-connection';
 
 /**
  * Set the tenant context for row-level security
  * This should be called before any database operations to ensure proper tenant isolation
  */
 export async function setTenantContext(tenantId: string): Promise<void> {
-  await prisma.$executeRaw`SELECT set_tenant_context(${tenantId})`;
+  await DatabaseConnection.withRetry(
+    () => prisma.$executeRaw`SELECT set_tenant_context(${tenantId})`,
+    'set-tenant-context'
+  );
 }
 
 /**
@@ -21,7 +25,10 @@ export async function withTenantContext<T>(
     return await fn();
   } finally {
     // Clear the tenant context after operation
-    await prisma.$executeRaw`SELECT set_config('app.current_tenant_id', '', true)`;
+    await DatabaseConnection.withRetry(
+      () => prisma.$executeRaw`SELECT set_config('app.current_tenant_id', '', true)`,
+      'clear-tenant-context'
+    );
   }
 }
 
@@ -29,26 +36,32 @@ export async function withTenantContext<T>(
  * Create a new tenant
  */
 export async function createTenant(name: string): Promise<{ id: string; name: string }> {
-  return await prisma.tenant.create({
-    data: {
-      name,
-    },
-    select: {
-      id: true,
-      name: true,
-    },
-  });
+  return await DatabaseConnection.withRetry(
+    () => prisma.tenant.create({
+      data: {
+        name,
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    }),
+    'create-tenant'
+  );
 }
 
 /**
  * Get tenant by ID
  */
 export async function getTenant(id: string): Promise<{ id: string; name: string } | null> {
-  return await prisma.tenant.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      name: true,
-    },
-  });
+  return await DatabaseConnection.withRetry(
+    () => prisma.tenant.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+      },
+    }),
+    'get-tenant'
+  );
 }

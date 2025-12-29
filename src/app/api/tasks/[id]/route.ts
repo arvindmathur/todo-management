@@ -5,6 +5,8 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { auditLogger } from "@/lib/audit-logger"
 import { OptimizedDbService } from "@/lib/db-optimized"
+import { BatchOperations } from "@/lib/db-batch-operations"
+import { DatabaseConnection } from "@/lib/db-connection"
 import { NotificationScheduler } from "@/lib/email/scheduler"
 
 const updateTaskSchema = z.object({
@@ -36,24 +38,27 @@ export async function GET(
       )
     }
 
-    const task = await prisma.task.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      },
-      include: {
-        project: {
-          select: { id: true, name: true }
+    const task = await DatabaseConnection.withRetry(
+      () => prisma.task.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
         },
-        context: {
-          select: { id: true, name: true }
-        },
-        area: {
-          select: { id: true, name: true }
+        include: {
+          project: {
+            select: { id: true, name: true }
+          },
+          context: {
+            select: { id: true, name: true }
+          },
+          area: {
+            select: { id: true, name: true }
+          }
         }
-      }
-    })
+      }),
+      'get-task'
+    )
 
     if (!task) {
       return NextResponse.json(
@@ -91,13 +96,16 @@ export async function PUT(
     const validatedData = updateTaskSchema.parse(body)
 
     // Check if task exists and belongs to user
-    const existingTask = await prisma.task.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const existingTask = await DatabaseConnection.withRetry(
+      () => prisma.task.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'update-task-find-existing'
+    )
 
     if (!existingTask) {
       return NextResponse.json(
@@ -106,48 +114,31 @@ export async function PUT(
       )
     }
 
-    // Validate related entities if provided
-    if (validatedData.projectId) {
-      const project = await prisma.project.findFirst({
-        where: {
-          id: validatedData.projectId,
-          userId: session.user.id,
-          tenantId: session.user.tenantId,
+    // Validate related entities using batch operations for efficiency
+    if (validatedData.projectId || validatedData.contextId || validatedData.areaId) {
+      const entityValidation = await BatchOperations.validateEntities(
+        session.user.tenantId,
+        session.user.id,
+        {
+          projectIds: validatedData.projectId ? [validatedData.projectId] : undefined,
+          contextIds: validatedData.contextId ? [validatedData.contextId] : undefined,
+          areaIds: validatedData.areaId ? [validatedData.areaId] : undefined,
         }
-      })
-      if (!project) {
+      )
+
+      if (validatedData.projectId && !entityValidation.validProjects.has(validatedData.projectId)) {
         return NextResponse.json(
           { error: "Project not found" },
           { status: 404 }
         )
       }
-    }
-
-    if (validatedData.contextId) {
-      const context = await prisma.context.findFirst({
-        where: {
-          id: validatedData.contextId,
-          userId: session.user.id,
-          tenantId: session.user.tenantId,
-        }
-      })
-      if (!context) {
+      if (validatedData.contextId && !entityValidation.validContexts.has(validatedData.contextId)) {
         return NextResponse.json(
           { error: "Context not found" },
           { status: 404 }
         )
       }
-    }
-
-    if (validatedData.areaId) {
-      const area = await prisma.area.findFirst({
-        where: {
-          id: validatedData.areaId,
-          userId: session.user.id,
-          tenantId: session.user.tenantId,
-        }
-      })
-      if (!area) {
+      if (validatedData.areaId && !entityValidation.validAreas.has(validatedData.areaId)) {
         return NextResponse.json(
           { error: "Area not found" },
           { status: 404 }
@@ -207,21 +198,24 @@ export async function PUT(
       updateData.completedAt = new Date()
     }
 
-    const task = await prisma.task.update({
-      where: { id: params.id },
-      data: updateData,
-      include: {
-        project: {
-          select: { id: true, name: true }
-        },
-        context: {
-          select: { id: true, name: true }
-        },
-        area: {
-          select: { id: true, name: true }
+    const task = await DatabaseConnection.withRetry(
+      () => prisma.task.update({
+        where: { id: params.id },
+        data: updateData,
+        include: {
+          project: {
+            select: { id: true, name: true }
+          },
+          context: {
+            select: { id: true, name: true }
+          },
+          area: {
+            select: { id: true, name: true }
+          }
         }
-      }
-    })
+      }),
+      'update-task'
+    )
 
     // Handle reminder scheduling if reminder fields were updated
     if (validatedData.reminderEnabled !== undefined || 
@@ -231,10 +225,13 @@ export async function PUT(
       
       try {
         // Get user preferences for timezone
-        const user = await prisma.user.findUnique({
-          where: { id: session.user.id },
-          select: { preferences: true }
-        });
+        const user = await DatabaseConnection.withRetry(
+          () => prisma.user.findUnique({
+            where: { id: session.user.id },
+            select: { preferences: true }
+          }),
+          'get-user-timezone-preferences'
+        );
         
         const preferences = (user?.preferences as any) || {};
         const userTimezone = preferences.timezone || 'UTC';
@@ -319,13 +316,16 @@ export async function DELETE(
     }
 
     // Check if task exists and belongs to user
-    const existingTask = await prisma.task.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const existingTask = await DatabaseConnection.withRetry(
+      () => prisma.task.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'delete-task-find-existing'
+    )
 
     if (!existingTask) {
       return NextResponse.json(
@@ -334,9 +334,12 @@ export async function DELETE(
       )
     }
 
-    await prisma.task.delete({
-      where: { id: params.id }
-    })
+    await DatabaseConnection.withRetry(
+      () => prisma.task.delete({
+        where: { id: params.id }
+      }),
+      'delete-task'
+    )
 
     // Cancel any pending reminders for this task
     try {

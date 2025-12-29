@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 const updateReviewSchema = z.object({
   projectsReviewed: z.array(z.string()).optional(),
@@ -33,13 +34,16 @@ export async function PUT(
     const validatedData = updateReviewSchema.parse(body)
 
     // Get current review
-    const currentReview = await prisma.weeklyReview.findFirst({
-      where: {
-        id: params.id,
-        tenantId,
-        userId: session.user.id
-      }
-    })
+    const currentReview = await DatabaseConnection.withRetry(
+      () => prisma.weeklyReview.findFirst({
+        where: {
+          id: params.id,
+          tenantId,
+          userId: session.user.id
+        }
+      }),
+      'get-review-for-update'
+    )
 
     if (!currentReview) {
       return NextResponse.json(
@@ -71,10 +75,13 @@ export async function PUT(
     }
 
     // Update review
-    const updatedReview = await prisma.weeklyReview.update({
-      where: { id: params.id },
-      data: updateData
-    })
+    const updatedReview = await DatabaseConnection.withRetry(
+      () => prisma.weeklyReview.update({
+        where: { id: params.id },
+        data: updateData
+      }),
+      'update-review'
+    )
 
     return NextResponse.json({
       message: "Review updated successfully",
@@ -120,13 +127,16 @@ export async function DELETE(
     }
 
     // Verify ownership and delete
-    const deletedReview = await prisma.weeklyReview.deleteMany({
-      where: {
-        id: params.id,
-        tenantId,
-        userId: session.user.id
-      }
-    })
+    const deletedReview = await DatabaseConnection.withRetry(
+      () => prisma.weeklyReview.deleteMany({
+        where: {
+          id: params.id,
+          tenantId,
+          userId: session.user.id
+        }
+      }),
+      'delete-review'
+    )
 
     if (deletedReview.count === 0) {
       return NextResponse.json(

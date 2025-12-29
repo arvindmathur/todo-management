@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { DatabaseConnection } from '@/lib/db-connection';
 import { UserPreferences } from '@/hooks/useUserPreferences';
 import { TaskSummary, SummaryEmailData, generateSummaryEmailTemplate } from './templates';
 
@@ -21,10 +22,13 @@ export class SummaryService {
     const { userId, tenantId, frequency, userTimezone, preferences } = options;
 
     // Get user information
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { name: true, email: true }
-    });
+    const user = await DatabaseConnection.withRetry(
+      () => prisma.user.findUnique({
+        where: { id: userId },
+        select: { name: true, email: true }
+      }),
+      'get-user-for-summary'
+    );
 
     if (!user) {
       throw new Error('User not found');
@@ -134,34 +138,37 @@ export class SummaryService {
     endDate: Date,
     preferences: UserPreferences
   ): Promise<TaskSummary[]> {
-    const tasks = await prisma.task.findMany({
-      where: {
-        tenantId,
-        userId,
-        status: 'active',
-        OR: [
-          // Overdue tasks
-          {
-            dueDate: {
-              lt: new Date(new Date().setHours(0, 0, 0, 0))
+    const tasks = await DatabaseConnection.withRetry(
+      () => prisma.task.findMany({
+        where: {
+          tenantId,
+          userId,
+          status: 'active',
+          OR: [
+            // Overdue tasks
+            {
+              dueDate: {
+                lt: new Date(new Date().setHours(0, 0, 0, 0))
+              }
+            },
+            // Tasks due in current period
+            {
+              dueDate: {
+                gte: startDate,
+                lte: endDate
+              }
             }
-          },
-          // Tasks due in current period
-          {
-            dueDate: {
-              gte: startDate,
-              lte: endDate
-            }
-          }
-        ]
-      },
-      include: {
-        project: { select: { name: true } },
-        context: { select: { name: true } },
-        area: { select: { name: true } }
-      },
-      orderBy: this.buildOrderBy(preferences.taskSorting)
-    });
+          ]
+        },
+        include: {
+          project: { select: { name: true } },
+          context: { select: { name: true } },
+          area: { select: { name: true } }
+        },
+        orderBy: this.buildOrderBy(preferences.taskSorting)
+      }),
+      'get-focus-tasks-for-summary'
+    );
 
     return tasks.map(task => ({
       id: task.id,
@@ -185,23 +192,26 @@ export class SummaryService {
     endDate: Date,
     preferences: UserPreferences
   ): Promise<TaskSummary[]> {
-    const tasks = await prisma.task.findMany({
-      where: {
-        tenantId,
-        userId,
-        status: 'active',
-        dueDate: {
-          gte: startDate,
-          lte: endDate
-        }
-      },
-      include: {
-        project: { select: { name: true } },
-        context: { select: { name: true } },
-        area: { select: { name: true } }
-      },
-      orderBy: this.buildOrderBy(preferences.taskSorting)
-    });
+    const tasks = await DatabaseConnection.withRetry(
+      () => prisma.task.findMany({
+        where: {
+          tenantId,
+          userId,
+          status: 'active',
+          dueDate: {
+            gte: startDate,
+            lte: endDate
+          }
+        },
+        include: {
+          project: { select: { name: true } },
+          context: { select: { name: true } },
+          area: { select: { name: true } }
+        },
+        orderBy: this.buildOrderBy(preferences.taskSorting)
+      }),
+      'get-upcoming-tasks-for-summary'
+    );
 
     return tasks.map(task => ({
       id: task.id,
@@ -225,23 +235,26 @@ export class SummaryService {
     endDate: Date,
     preferences: UserPreferences
   ): Promise<TaskSummary[]> {
-    const tasks = await prisma.task.findMany({
-      where: {
-        tenantId,
-        userId,
-        status: 'completed',
-        completedAt: {
-          gte: startDate,
-          lte: endDate
-        }
-      },
-      include: {
-        project: { select: { name: true } },
-        context: { select: { name: true } },
-        area: { select: { name: true } }
-      },
-      orderBy: { completedAt: 'desc' }
-    });
+    const tasks = await DatabaseConnection.withRetry(
+      () => prisma.task.findMany({
+        where: {
+          tenantId,
+          userId,
+          status: 'completed',
+          completedAt: {
+            gte: startDate,
+            lte: endDate
+          }
+        },
+        include: {
+          project: { select: { name: true } },
+          context: { select: { name: true } },
+          area: { select: { name: true } }
+        },
+        orderBy: { completedAt: 'desc' }
+      }),
+      'get-completed-tasks-for-summary'
+    );
 
     return tasks.map(task => ({
       id: task.id,

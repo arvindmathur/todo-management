@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { prisma } from '@/lib/prisma';
+import { DatabaseConnection } from '@/lib/db-connection';
 
 export interface EmailConfig {
   host: string;
@@ -162,10 +163,13 @@ export class EmailService {
         updateData.errorMessage = errorMessage;
       }
 
-      await prisma.emailNotification.update({
-        where: { id: notificationId },
-        data: updateData,
-      });
+      await DatabaseConnection.withRetry(
+        () => prisma.emailNotification.update({
+          where: { id: notificationId },
+          data: updateData,
+        }),
+        'update-email-notification-status'
+      );
     } catch (error) {
       console.error('Failed to update notification status:', error);
     }

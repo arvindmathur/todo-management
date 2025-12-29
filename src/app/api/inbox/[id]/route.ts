@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next"
 import { z } from "zod"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 const updateInboxItemSchema = z.object({
   content: z.string().min(1, "Content is required").max(2000, "Content too long").optional(),
@@ -23,13 +24,16 @@ export async function GET(
       )
     }
 
-    const inboxItem = await prisma.inboxItem.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const inboxItem = await DatabaseConnection.withRetry(
+      () => prisma.inboxItem.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'get-inbox-item-by-id'
+    )
 
     if (!inboxItem) {
       return NextResponse.json(
@@ -67,13 +71,16 @@ export async function PUT(
     const validatedData = updateInboxItemSchema.parse(body)
 
     // Check if inbox item exists and belongs to user
-    const existingItem = await prisma.inboxItem.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const existingItem = await DatabaseConnection.withRetry(
+      () => prisma.inboxItem.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'check-inbox-item-exists'
+    )
 
     if (!existingItem) {
       return NextResponse.json(
@@ -82,10 +89,13 @@ export async function PUT(
       )
     }
 
-    const inboxItem = await prisma.inboxItem.update({
-      where: { id: params.id },
-      data: validatedData,
-    })
+    const inboxItem = await DatabaseConnection.withRetry(
+      () => prisma.inboxItem.update({
+        where: { id: params.id },
+        data: validatedData,
+      }),
+      'update-inbox-item'
+    )
 
     return NextResponse.json({
       message: "Inbox item updated successfully",
@@ -123,13 +133,16 @@ export async function DELETE(
     }
 
     // Check if inbox item exists and belongs to user
-    const existingItem = await prisma.inboxItem.findFirst({
-      where: {
-        id: params.id,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
+    const existingItem = await DatabaseConnection.withRetry(
+      () => prisma.inboxItem.findFirst({
+        where: {
+          id: params.id,
+          userId: session.user.id,
+          tenantId: session.user.tenantId,
+        }
+      }),
+      'check-inbox-item-for-delete'
+    )
 
     if (!existingItem) {
       return NextResponse.json(
@@ -138,19 +151,25 @@ export async function DELETE(
       )
     }
 
-    // Delete the inbox item
-    await prisma.inboxItem.delete({
-      where: { id: params.id }
-    })
-
-    // Get updated unprocessed count
-    const unprocessedCount = await prisma.inboxItem.count({
-      where: {
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-        processed: false,
-      }
-    })
+    // Delete the inbox item and get updated count in parallel
+    const [, unprocessedCount] = await Promise.all([
+      DatabaseConnection.withRetry(
+        () => prisma.inboxItem.delete({
+          where: { id: params.id }
+        }),
+        'delete-inbox-item'
+      ),
+      DatabaseConnection.withRetry(
+        () => prisma.inboxItem.count({
+          where: {
+            userId: session.user.id,
+            tenantId: session.user.tenantId,
+            processed: false,
+          }
+        }),
+        'count-unprocessed-after-delete'
+      )
+    ])
 
     return NextResponse.json({
       message: "Inbox item deleted successfully",
