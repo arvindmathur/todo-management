@@ -12,6 +12,7 @@ export const VERSION_INFO = {
 export const VERSION_HISTORY = {
   '1.0.0': 'Initial stable release with basic todo management',
   '2.01.0': 'Database connection improvements with retry logic and health monitoring',
+  '2.02.0': 'Comprehensive retry logic applied to all database operations',
 };
 
 export function getVersionInfo() {
