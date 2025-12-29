@@ -20,7 +20,7 @@ export class DatabaseConnection {
         // Add timeout to the operation
         const result = await Promise.race([
           operation(),
-          this.createTimeoutPromise(operationName)
+          this.createTimeoutPromise<T>(operationName)
         ]);
 
         return result;

@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) prisma generate && next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "postinstall": "prisma generate",
-    "vercel-build": "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) prisma generate && next build",
+    "vercel-build": "prisma generate && next build",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
     "format": "prettier --write .",
