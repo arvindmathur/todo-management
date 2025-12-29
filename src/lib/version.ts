@@ -17,6 +17,7 @@ export const VERSION_HISTORY = {
   '2.04.0': 'Fix overdue date logic - tasks due today no longer marked as overdue',
   '2.05.0': 'Excel-like editing: Click-to-edit task titles with mobile long-press support',
   '2.06.0': 'Complete Excel-like editing: Click-to-edit due dates and priority cycling',
+  '2.07.0': 'Improved priority selection: Dropdown menu with all 4 priority options',
 };
 
 export function getVersionInfo() {

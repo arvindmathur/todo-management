@@ -42,6 +42,7 @@ export function TaskItem({
   const [isEditing, setIsEditing] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [isEditingDueDate, setIsEditingDueDate] = useState(false)
+  const [isEditingPriority, setIsEditingPriority] = useState(false)
   const [editingTitle, setEditingTitle] = useState(task.title)
   const [editingDueDate, setEditingDueDate] = useState(
     task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : ""
@@ -52,6 +53,7 @@ export function TaskItem({
   
   const titleInputRef = useRef<HTMLInputElement>(null)
   const dueDateInputRef = useRef<HTMLInputElement>(null)
+  const priorityDropdownRef = useRef<HTMLDivElement>(null)
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
   
   const { handleError } = useErrorHandling()
@@ -71,6 +73,20 @@ export function TaskItem({
       dueDateInputRef.current.focus()
     }
   }, [isEditingDueDate])
+
+  // Close priority dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (priorityDropdownRef.current && !priorityDropdownRef.current.contains(event.target as Node)) {
+        setIsEditingPriority(false)
+      }
+    }
+
+    if (isEditingPriority) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [isEditingPriority])
 
   // Reset editing values when task changes
   useEffect(() => {
@@ -262,18 +278,23 @@ export function TaskItem({
   }
 
   // Handle priority editing
-  const handlePriorityClick = async (e: React.MouseEvent) => {
+  const handlePriorityClick = (e: React.MouseEvent) => {
     e.stopPropagation()
     if (isLoading || task.status === "completed" || isSavingPriority) return
+    setIsEditingPriority(!isEditingPriority)
+  }
 
-    const currentIndex = priorityOrder.indexOf(task.priority)
-    const nextIndex = (currentIndex + 1) % priorityOrder.length
-    const newPriority = priorityOrder[nextIndex]
+  const handlePrioritySelect = async (newPriority: TaskPriority) => {
+    if (newPriority === task.priority) {
+      setIsEditingPriority(false)
+      return
+    }
 
     setIsSavingPriority(true)
     try {
       const result = await onUpdate(task.id, { priority: newPriority })
       if (result.success) {
+        setIsEditingPriority(false)
         showSuccess("Priority Updated", `Priority changed to ${priorityLabels[newPriority]}`)
       }
     } catch (error) {
@@ -457,23 +478,52 @@ export function TaskItem({
 
           {/* Task metadata */}
           <div className="mt-2 flex items-center space-x-4 text-xs text-gray-500">
-            {/* Clickable Priority */}
-            <span 
-              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium cursor-pointer hover:shadow-md transition-all ${
-                priorityColors[task.priority]
-              } ${
-                task.status !== "completed" ? "hover:scale-105" : "cursor-default"
-              } ${
-                isSavingPriority ? "opacity-50" : ""
-              }`}
-              onClick={handlePriorityClick}
-              title={task.status !== "completed" ? "Click to cycle priority" : ""}
-            >
-              {isSavingPriority ? (
-                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current mr-1"></div>
-              ) : null}
-              {priorityLabels[task.priority]}
-            </span>
+            {/* Clickable Priority with Dropdown */}
+            <div className="relative" ref={priorityDropdownRef}>
+              <span 
+                className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium cursor-pointer hover:shadow-md transition-all ${
+                  priorityColors[task.priority]
+                } ${
+                  task.status !== "completed" ? "hover:scale-105" : "cursor-default"
+                } ${
+                  isSavingPriority ? "opacity-50" : ""
+                }`}
+                onClick={handlePriorityClick}
+                title={task.status !== "completed" ? "Click to change priority" : ""}
+              >
+                {isSavingPriority ? (
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current mr-1"></div>
+                ) : null}
+                {priorityLabels[task.priority]}
+                {task.status !== "completed" && !isSavingPriority && (
+                  <svg className="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                )}
+              </span>
+
+              {/* Priority Dropdown */}
+              {isEditingPriority && task.status !== "completed" && (
+                <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg z-50 min-w-[100px]">
+                  {priorityOrder.map((priority) => (
+                    <button
+                      key={priority}
+                      onClick={() => handlePrioritySelect(priority)}
+                      disabled={isSavingPriority}
+                      className={`w-full text-left px-3 py-2 text-xs font-medium hover:bg-gray-50 transition-colors first:rounded-t-md last:rounded-b-md ${
+                        priority === task.priority ? 'bg-blue-50' : ''
+                      } ${
+                        isSavingPriority ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
+                    >
+                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${priorityColors[priority]}`}>
+                        {priorityLabels[priority]}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* Clickable Due date */}
             {isEditingDueDate ? (

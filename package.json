@@ -1,6 +1,6 @@
 {
   "name": "todo-management-saas",
-  "version": "2.06.0",
+  "version": "2.07.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
