@@ -13,7 +13,8 @@ export const VERSION_HISTORY = {
   '1.0.0': 'Initial stable release with basic todo management',
   '2.01.0': 'Database connection improvements with retry logic and health monitoring',
   '2.02.0': 'Comprehensive retry logic applied to all database operations',
-  '2.03.0': 'Fix overdue date logic - tasks due today no longer marked as overdue',
+  '2.03.0': 'Enhanced database connection stability and error handling',
+  '2.04.0': 'Fix overdue date logic - tasks due today no longer marked as overdue',
 };
 
 export function getVersionInfo() {

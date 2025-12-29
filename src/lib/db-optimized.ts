@@ -273,23 +273,23 @@ export class OptimizedDbService {
     // Handle date filters
     if (dueDate) {
       const now = new Date()
-      // Use UTC dates to avoid timezone issues
-      const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-      const tomorrowUTC = new Date(todayUTC)
-      tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1)
+      // Use local timezone for date comparisons to match user expectations
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const tomorrow = new Date(today)
+      tomorrow.setDate(tomorrow.getDate() + 1)
 
       switch (dueDate) {
         case "today":
-          where.dueDate = { gte: todayUTC, lt: tomorrowUTC }
+          where.dueDate = { gte: today, lt: tomorrow }
           break
         case "overdue":
-          where.dueDate = { lt: todayUTC }
+          where.dueDate = { lt: today }
           break
         case "upcoming":
-          // Match the logic from /api/tasks/upcoming - next 7 days
-          const futureDate = new Date(tomorrowUTC)
-          futureDate.setUTCDate(futureDate.getUTCDate() + 7)
-          where.dueDate = { gte: tomorrowUTC, lt: futureDate }
+          // Next 7 days after tomorrow
+          const futureDate = new Date(tomorrow)
+          futureDate.setDate(futureDate.getDate() + 7)
+          where.dueDate = { gte: tomorrow, lt: futureDate }
           break
         case "no-due-date":
           where.dueDate = null

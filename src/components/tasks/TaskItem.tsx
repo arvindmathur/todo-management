@@ -92,10 +92,13 @@ export function TaskItem({
 
   const formatDueDate = (date: Date) => {
     const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const taskDate = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    const dueDate = new Date(date)
     
-    const diffTime = taskDate.getTime() - today.getTime()
+    // Compare dates in local timezone (user's perspective) - same logic as backend
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const taskDueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
+    
+    const diffTime = taskDueDate.getTime() - today.getTime()
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
     
     if (diffDays === 0) return "Today"
@@ -107,7 +110,18 @@ export function TaskItem({
     return date.toLocaleDateString()
   }
 
-  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && task.status !== "completed"
+  const isOverdue = (() => {
+    if (!task.dueDate || task.status === "completed") return false
+    
+    const now = new Date()
+    const dueDate = new Date(task.dueDate)
+    
+    // Compare dates in local timezone (user's perspective) - same logic as backend
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const taskDueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
+    
+    return taskDueDate < today
+  })()
 
   if (isEditing) {
     return (
