@@ -44,52 +44,77 @@ const taskFiltersSchema = z.object({
 
 // Get tasks with filtering and improved connection management
 export const GET = withErrorHandling(async (request: NextRequest) => {
+  console.log('📋 Tasks API: Starting request processing')
+  
   const session = await getServerSession(authOptions)
   requireAuth(session)
 
+  console.log('📋 Tasks API: Session validated for user:', session.user.id)
+
   // Ensure healthy database connection before proceeding
+  try {
+    await DatabaseConnection.ensureHealthyConnection()
+    console.log('📋 Tasks API: Database connection verified')
+  } catch (dbError) {
+    console.error('📋 Tasks API: Database connection failed:', dbError)
+    throw dbError
+  }
   await DatabaseConnection.ensureHealthyConnection()
 
   const { searchParams } = new URL(request.url)
   const filters = validateRequest(taskFiltersSchema, Object.fromEntries(searchParams), "Task filters")
   const paginationParams = createPaginationParams(searchParams)
 
+  console.log('📋 Tasks API: Filters validated:', { filters, paginationParams })
+
   // Use optimized database service with enhanced connection management
-  const result = await OptimizedDbService.getTasks(
-    session.user.tenantId,
-    session.user.id,
-    {
-      ...filters,
-      limit: paginationParams.limit,
-      offset: paginationParams.offset,
-    }
-  )
+  try {
+    const result = await OptimizedDbService.getTasks(
+      session.user.tenantId,
+      session.user.id,
+      {
+        ...filters,
+        limit: paginationParams.limit,
+        offset: paginationParams.offset,
+      }
+    )
 
-  // Reduced audit logging frequency to minimize database load
-  if (Math.random() < 0.05) { // Log 5% of requests (reduced from 10%)
-    try {
-      await auditLogger.logDataAccess(
-        session.user.tenantId,
-        session.user.id,
-        "task",
-        "READ",
-        result.tasks.length,
-        request
-      )
-    } catch (auditError) {
-      // Don't fail the request if audit logging fails
-      console.warn('Audit logging failed:', auditError)
+    console.log('📋 Tasks API: Tasks retrieved successfully:', { 
+      taskCount: result.tasks.length, 
+      totalCount: result.totalCount 
+    })
+
+    // Reduced audit logging frequency to minimize database load
+    if (Math.random() < 0.05) { // Log 5% of requests (reduced from 10%)
+      try {
+        await auditLogger.logDataAccess(
+          session.user.tenantId,
+          session.user.id,
+          "task",
+          "READ",
+          result.tasks.length,
+          request
+        )
+      } catch (auditError) {
+        // Don't fail the request if audit logging fails
+        console.warn('Audit logging failed:', auditError)
+      }
     }
+
+    // Create paginated response
+    const paginatedResult = createPaginationResult(
+      result.tasks,
+      paginationParams,
+      result.totalCount
+    )
+
+    console.log('📋 Tasks API: Response prepared successfully')
+    return NextResponse.json(paginatedResult)
+    
+  } catch (tasksError) {
+    console.error('📋 Tasks API: Error retrieving tasks:', tasksError)
+    throw tasksError
   }
-
-  // Create paginated response
-  const paginatedResult = createPaginationResult(
-    result.tasks,
-    paginationParams,
-    result.totalCount
-  )
-
-  return NextResponse.json(paginatedResult)
 }, "getTasks")
 
 // Create new task with improved connection management
