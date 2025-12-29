@@ -260,37 +260,48 @@ export class OptimizedDbService {
     }
 
     // Handle status and completed task filtering
-    const statusConditions = []
     if (status === "all" || includeCompleted !== "none") {
-      // Include active tasks
-      statusConditions.push({ status: "active" })
+      const statusConditions = []
       
-      // Include completed tasks based on the filter
-      if (includeCompleted !== "none") {
-        const now = new Date()
-        let completedAfter: Date
-        
-        switch (includeCompleted) {
-          case "1day":
-            completedAfter = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-            break
-          case "7days":
-            completedAfter = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-            break
-          case "30days":
-            completedAfter = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-            break
-          default:
-            completedAfter = new Date(0) // Include all completed tasks
-        }
-        
-        statusConditions.push({
-          status: "completed",
-          completedAt: { gte: completedAfter }
-        })
+      // Always include active tasks unless specifically filtering for completed only
+      if (status !== "completed") {
+        statusConditions.push({ status: "active" })
       }
       
-      where.OR = statusConditions
+      // Include completed tasks based on the filter
+      if (status === "completed" || includeCompleted !== "none") {
+        const completedCondition: any = { status: "completed" }
+        
+        if (includeCompleted !== "none") {
+          const now = new Date()
+          let completedAfter: Date
+          
+          switch (includeCompleted) {
+            case "1day":
+              completedAfter = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+              break
+            case "7days":
+              completedAfter = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+              break
+            case "30days":
+              completedAfter = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+              break
+            default:
+              completedAfter = new Date(0) // Include all completed tasks
+          }
+          
+          completedCondition.completedAt = { gte: completedAfter }
+        }
+        
+        statusConditions.push(completedCondition)
+      }
+      
+      if (statusConditions.length > 1) {
+        where.OR = statusConditions
+      } else if (statusConditions.length === 1) {
+        // If only one condition, apply it directly
+        Object.assign(where, statusConditions[0])
+      }
     } else {
       where.status = status
     }
@@ -345,16 +356,28 @@ export class OptimizedDbService {
     }
 
     // Combine OR conditions if needed
-    if (searchConditions.length > 0 && dateConditions.length > 0) {
-      // Both search and focus filters - need to combine them properly
+    const orConditions = []
+    
+    // Add search conditions
+    if (searchConditions.length > 0) {
+      orConditions.push(...searchConditions)
+    }
+    
+    // Add date conditions
+    if (dateConditions.length > 0) {
+      orConditions.push(...dateConditions)
+    }
+    
+    // If we have OR conditions from search/date AND status OR conditions, we need to use AND
+    if (orConditions.length > 0 && where.OR) {
+      // Move status OR to AND clause
       where.AND = [
-        { OR: searchConditions },
-        { OR: dateConditions }
+        { OR: where.OR }, // Status conditions
+        { OR: orConditions } // Search/date conditions
       ]
-    } else if (searchConditions.length > 0) {
-      where.OR = searchConditions
-    } else if (dateConditions.length > 0) {
-      where.OR = dateConditions
+      delete where.OR
+    } else if (orConditions.length > 0) {
+      where.OR = orConditions
     }
 
     // Use optimized query with selective includes
