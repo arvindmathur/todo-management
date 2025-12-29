@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { auditLogger } from "@/lib/audit-logger"
 import { OptimizedDbService } from "@/lib/db-optimized"
+import { BatchOperations } from "@/lib/db-batch-operations"
 import { createPaginationParams, createPaginationResult } from "@/lib/pagination"
 import { 
   withErrorHandling, 
@@ -128,69 +129,27 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   const body = await request.json()
   const validatedData = validateRequest(createTaskSchema, body, "Task creation")
 
-  // Validate related entities belong to user with optimized queries
-  const validationPromises = []
-  
-  if (validatedData.projectId) {
-    validationPromises.push(
-      DatabaseConnection.withRetry(
-        () => prisma.project.findFirst({
-          where: {
-            id: validatedData.projectId,
-            userId: session.user.id,
-            tenantId: session.user.tenantId,
-          },
-          select: { id: true } // Only select what we need
-        }),
-        'validate-project'
-      ).then(project => {
-        requireResource(project, "Project")
-        return project
-      })
+  // Validate related entities belong to user with optimized batch queries
+  if (validatedData.projectId || validatedData.contextId || validatedData.areaId) {
+    const entityValidation = await BatchOperations.validateEntities(
+      session.user.tenantId,
+      session.user.id,
+      {
+        projectIds: validatedData.projectId ? [validatedData.projectId] : undefined,
+        contextIds: validatedData.contextId ? [validatedData.contextId] : undefined,
+        areaIds: validatedData.areaId ? [validatedData.areaId] : undefined,
+      }
     )
-  }
 
-  if (validatedData.contextId) {
-    validationPromises.push(
-      DatabaseConnection.withRetry(
-        () => prisma.context.findFirst({
-          where: {
-            id: validatedData.contextId,
-            userId: session.user.id,
-            tenantId: session.user.tenantId,
-          },
-          select: { id: true } // Only select what we need
-        }),
-        'validate-context'
-      ).then(context => {
-        requireResource(context, "Context")
-        return context
-      })
-    )
-  }
-
-  if (validatedData.areaId) {
-    validationPromises.push(
-      DatabaseConnection.withRetry(
-        () => prisma.area.findFirst({
-          where: {
-            id: validatedData.areaId,
-            userId: session.user.id,
-            tenantId: session.user.tenantId,
-          },
-          select: { id: true } // Only select what we need
-        }),
-        'validate-area'
-      ).then(area => {
-        requireResource(area, "Area")
-        return area
-      })
-    )
-  }
-
-  // Wait for all validations to complete
-  if (validationPromises.length > 0) {
-    await Promise.all(validationPromises)
+    if (validatedData.projectId && !entityValidation.validProjects.has(validatedData.projectId)) {
+      throw new Error("Project not found")
+    }
+    if (validatedData.contextId && !entityValidation.validContexts.has(validatedData.contextId)) {
+      throw new Error("Context not found")
+    }
+    if (validatedData.areaId && !entityValidation.validAreas.has(validatedData.areaId)) {
+      throw new Error("Area not found")
+    }
   }
 
   // Validate and convert dueDate if provided

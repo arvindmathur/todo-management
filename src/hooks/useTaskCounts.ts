@@ -21,7 +21,7 @@ const countsCache = new Map<string, {
 // Global request deduplication
 const activeCountsRequests = new Map<string, Promise<TaskCounts>>()
 
-const CACHE_DURATION = 15000 // 15 seconds cache for counts
+const CACHE_DURATION = 10000 // 10 seconds cache for counts
 const DEFAULT_COUNTS: TaskCounts = {
   all: 0,
   today: 0,

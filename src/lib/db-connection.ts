@@ -2,10 +2,10 @@ import { prisma, ensureDatabaseConnection, checkDatabaseHealth, cleanupConnectio
 
 // Database connection utilities with enhanced retry logic and connection pool management
 export class DatabaseConnection {
-  private static readonly MAX_RETRIES = 3;
-  private static readonly TIMEOUT_MS = 6000; // Reduced to 6 seconds for faster failure
-  private static readonly RETRY_DELAY_MS = 300; // Reduced initial delay
-  private static readonly CONNECTION_CHECK_INTERVAL = 30000; // 30 seconds
+  private static readonly MAX_RETRIES = 2; // Reduced retries for faster failure
+  private static readonly TIMEOUT_MS = 4000; // Reduced to 4 seconds for faster failure
+  private static readonly RETRY_DELAY_MS = 200; // Reduced initial delay
+  private static readonly CONNECTION_CHECK_INTERVAL = 20000; // 20 seconds
   
   private static lastHealthCheck = 0;
   private static isHealthy = true;
@@ -109,8 +109,8 @@ export class DatabaseConnection {
     
     this.isProcessingQueue = true;
     
-    // Process operations with limited concurrency (reduced for shared database)
-    const CONCURRENT_OPERATIONS = process.env.NODE_ENV === 'production' ? 2 : 3;
+    // Process operations with limited concurrency (ultra-conservative for shared database)
+    const CONCURRENT_OPERATIONS = 1; // Single operation at a time for maximum stability
     
     while (this.operationQueue.length > 0) {
       const batch = this.operationQueue.splice(0, CONCURRENT_OPERATIONS);

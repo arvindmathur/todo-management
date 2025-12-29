@@ -27,13 +27,11 @@ if (process.env.NODE_ENV !== 'production') {
 let isConnected = false;
 let connectionPromise: Promise<void> | null = null;
 let lastConnectionCheck = 0;
-const CONNECTION_CHECK_INTERVAL = 30000; // 30 seconds
-
-// Connection pool monitoring with environment-specific limits
-let activeConnections = 0;
-const MAX_CONNECTIONS = process.env.NODE_ENV === 'production' ? 3 : 8; // Reduced for production to account for shared database
 
 // Environment-specific connection tracking
+let activeConnections = 0;
+const MAX_CONNECTIONS = 1; // Ultra-conservative for shared database with many users
+const CONNECTION_CHECK_INTERVAL = 20000; // 20 seconds
 const ENVIRONMENT_ID = process.env.VERCEL ? 'vercel' : 'local';
 const CONNECTION_PREFIX = `${ENVIRONMENT_ID}-${process.pid || 'unknown'}`;
 

@@ -2,123 +2,68 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
 import { authOptions } from "@/lib/auth"
 import { DatabaseConnection } from "@/lib/db-connection"
+import { BatchOperations } from "@/lib/db-batch-operations"
 import { withErrorHandling, requireAuth } from "@/lib/api-error-handler"
 
-// Optimized task counts endpoint - single query for all counts
+// Global cache for task counts to reduce database load
+const countsCache = new Map<string, {
+  data: any
+  timestamp: number
+}>()
+
+const CACHE_DURATION = 5000 // 5 seconds cache for high-frequency endpoint
+
+// Optimized task counts endpoint - single query for all counts with caching
 export const GET = withErrorHandling(async (request: NextRequest) => {
   const session = await getServerSession(authOptions)
   requireAuth(session)
+
+  const cacheKey = `counts:${session.user.tenantId}:${session.user.id}`
+  const now = Date.now()
+
+  // Check cache first for high performance
+  const cached = countsCache.get(cacheKey)
+  if (cached && (now - cached.timestamp) < CACHE_DURATION) {
+    return NextResponse.json({
+      success: true,
+      counts: cached.data,
+      cached: true,
+      timestamp: new Date().toISOString()
+    })
+  }
 
   // Ensure healthy database connection
   await DatabaseConnection.ensureHealthyConnection()
 
   try {
-    // Get all counts in a single optimized query using raw SQL for maximum performance
-    const result = await DatabaseConnection.withRetry(
-      async () => {
-        const { prisma } = await import("@/lib/prisma")
-        
-        // Use raw SQL for maximum performance - single query for all counts
-        const counts = await prisma.$queryRaw<Array<{
-          count_type: string
-          count_value: bigint
-        }>>`
-          SELECT 
-            'all' as count_type, 
-            COUNT(*) as count_value
-          FROM "Task" 
-          WHERE "tenantId" = ${session.user.tenantId} 
-            AND "userId" = ${session.user.id} 
-            AND "status" = 'active'
-          
-          UNION ALL
-          
-          SELECT 
-            'today' as count_type, 
-            COUNT(*) as count_value
-          FROM "Task" 
-          WHERE "tenantId" = ${session.user.tenantId} 
-            AND "userId" = ${session.user.id} 
-            AND "status" = 'active'
-            AND "dueDate"::date = CURRENT_DATE
-          
-          UNION ALL
-          
-          SELECT 
-            'overdue' as count_type, 
-            COUNT(*) as count_value
-          FROM "Task" 
-          WHERE "tenantId" = ${session.user.tenantId} 
-            AND "userId" = ${session.user.id} 
-            AND "status" = 'active'
-            AND "dueDate"::date < CURRENT_DATE
-          
-          UNION ALL
-          
-          SELECT 
-            'upcoming' as count_type, 
-            COUNT(*) as count_value
-          FROM "Task" 
-          WHERE "tenantId" = ${session.user.tenantId} 
-            AND "userId" = ${session.user.id} 
-            AND "status" = 'active'
-            AND "dueDate"::date > CURRENT_DATE 
-            AND "dueDate"::date <= CURRENT_DATE + INTERVAL '7 days'
-          
-          UNION ALL
-          
-          SELECT 
-            'noDueDate' as count_type, 
-            COUNT(*) as count_value
-          FROM "Task" 
-          WHERE "tenantId" = ${session.user.tenantId} 
-            AND "userId" = ${session.user.id} 
-            AND "status" = 'active'
-            AND "dueDate" IS NULL
-        `
-
-        // Transform the result into a more usable format
-        const taskCounts = {
-          all: 0,
-          today: 0,
-          overdue: 0,
-          upcoming: 0,
-          noDueDate: 0,
-          focus: 0,
-        }
-
-        counts.forEach(row => {
-          const count = Number(row.count_value)
-          switch (row.count_type) {
-            case 'all':
-              taskCounts.all = count
-              break
-            case 'today':
-              taskCounts.today = count
-              break
-            case 'overdue':
-              taskCounts.overdue = count
-              break
-            case 'upcoming':
-              taskCounts.upcoming = count
-              break
-            case 'noDueDate':
-              taskCounts.noDueDate = count
-              break
-          }
-        })
-
-        // Calculate focus count (overdue + today)
-        taskCounts.focus = taskCounts.overdue + taskCounts.today
-
-        return taskCounts
-      },
-      'get-task-counts'
+    // Use batch operations for maximum efficiency
+    const statistics = await BatchOperations.getTaskStatistics(
+      session.user.tenantId,
+      session.user.id
     )
+
+    const counts = statistics.counts
+
+    // Cache the result
+    countsCache.set(cacheKey, {
+      data: counts,
+      timestamp: now
+    })
+
+    // Clean up old cache entries periodically
+    if (Math.random() < 0.1) { // 10% chance
+      const cutoff = now - CACHE_DURATION * 2
+      for (const [key, value] of countsCache.entries()) {
+        if (value.timestamp < cutoff) {
+          countsCache.delete(key)
+        }
+      }
+    }
 
     return NextResponse.json({
       success: true,
-      counts: result,
+      counts,
+      cached: false,
       timestamp: new Date().toISOString()
     })
 
@@ -126,16 +71,18 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
     console.error('Error fetching task counts:', error)
     
     // Return zero counts on error to prevent UI breaking
+    const fallbackCounts = {
+      all: 0,
+      today: 0,
+      overdue: 0,
+      upcoming: 0,
+      noDueDate: 0,
+      focus: 0,
+    }
+
     return NextResponse.json({
       success: false,
-      counts: {
-        all: 0,
-        today: 0,
-        overdue: 0,
-        upcoming: 0,
-        noDueDate: 0,
-        focus: 0,
-      },
+      counts: fallbackCounts,
       error: 'Failed to fetch task counts',
       timestamp: new Date().toISOString()
     }, { status: 500 })
