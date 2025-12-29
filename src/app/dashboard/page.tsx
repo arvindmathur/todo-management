@@ -2,11 +2,12 @@
 
 import { useSession, signOut } from "next-auth/react"
 import { useRouter } from "next/navigation"
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useTasks } from "@/hooks/useTasks"
 import { useTaskViews } from "@/hooks/useTaskViews"
 import { useUserPreferences } from "@/hooks/useUserPreferences"
+import { useTaskCounts } from "@/hooks/useTaskCounts"
 import { TaskList } from "@/components/tasks/TaskList"
 import { TaskViewTabs } from "@/components/tasks/TaskViewTabs"
 import { CollapsibleFilters } from "@/components/tasks/CollapsibleFilters"
@@ -20,14 +21,9 @@ export default function Dashboard() {
   const [activeView, setActiveView] = useState("focus")
   const [showAdditionalFilters, setShowAdditionalFilters] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
-  const [taskCounts, setTaskCounts] = useState({
-    all: 0,
-    today: 0,
-    overdue: 0,
-    upcoming: 0,
-    noDueDate: 0,
-    focus: 0,
-  })
+
+  // Use optimized task counts hook
+  const { counts: taskCounts, refreshCounts } = useTaskCounts()
 
   const {
     tasks,
@@ -45,68 +41,6 @@ export default function Dashboard() {
 
   const { getTodayTasks, getOverdueTasks, getUpcomingTasks } = useTaskViews()
 
-  // Function to refresh task counts (independent of current filters)
-  const refreshTaskCounts = useCallback(async () => {
-    if (status !== "authenticated") return
-    
-    try {
-      // Get user preference for completed task visibility
-      const completedTaskVisibility = preferencesData?.preferences?.completedTaskVisibility || "none"
-      
-      // Make direct API calls for all counts to ensure independence from current filters
-      const [allTasksResponse, todayTasksResponse, overdueTasksResponse, upcomingTasksResponse, noDueDateTasksResponse] = await Promise.all([
-        fetch(`/api/tasks?status=active&includeCompleted=${completedTaskVisibility}`).then(res => {
-          if (!res.ok) throw new Error('Failed to fetch all tasks')
-          return res.json()
-        }),
-        fetch(`/api/tasks/today?includeCompleted=${completedTaskVisibility}`).then(res => {
-          if (!res.ok) throw new Error('Failed to fetch today tasks')
-          return res.json()
-        }),
-        fetch(`/api/tasks/overdue?includeCompleted=${completedTaskVisibility}`).then(res => {
-          if (!res.ok) throw new Error('Failed to fetch overdue tasks')
-          return res.json()
-        }),
-        fetch(`/api/tasks/upcoming?includeCompleted=${completedTaskVisibility}`).then(res => {
-          if (!res.ok) throw new Error('Failed to fetch upcoming tasks')
-          return res.json()
-        }),
-        fetch(`/api/tasks/no-due-date?includeCompleted=${completedTaskVisibility}`).then(res => {
-          if (!res.ok) throw new Error('Failed to fetch no due date tasks')
-          return res.json()
-        }),
-      ])
-
-      // Handle different response formats consistently
-      const allTasks = allTasksResponse.data || allTasksResponse.tasks || []
-      const todayTasks = todayTasksResponse.data || todayTasksResponse.tasks || []
-      const overdueTasks = overdueTasksResponse.data || overdueTasksResponse.tasks || []
-      const upcomingTasks = upcomingTasksResponse.data || upcomingTasksResponse.tasks || []
-      const noDueDateTasks = noDueDateTasksResponse.data || noDueDateTasksResponse.tasks || []
-
-      setTaskCounts({
-        all: allTasksResponse.totalCount || allTasksResponse.total || allTasks.length || 0,
-        today: todayTasksResponse.totalCount || todayTasksResponse.total || todayTasks.length || 0,
-        overdue: overdueTasksResponse.totalCount || overdueTasksResponse.total || overdueTasks.length || 0,
-        upcoming: upcomingTasksResponse.totalCount || upcomingTasksResponse.total || upcomingTasks.length || 0,
-        noDueDate: noDueDateTasksResponse.totalCount || noDueDateTasksResponse.total || noDueDateTasks.length || 0,
-        focus: (overdueTasksResponse.totalCount || overdueTasksResponse.total || overdueTasks.length || 0) + 
-               (todayTasksResponse.totalCount || todayTasksResponse.total || todayTasks.length || 0),
-      })
-    } catch (err) {
-      console.error("Failed to fetch task counts:", err)
-      // Set default counts on error
-      setTaskCounts({
-        all: 0,
-        today: 0,
-        overdue: 0,
-        upcoming: 0,
-        noDueDate: 0,
-        focus: 0,
-      })
-    }
-  }, [status, preferencesData?.preferences?.completedTaskVisibility])
-
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/auth/signin")
@@ -116,25 +50,38 @@ export default function Dashboard() {
     }
   }, [status, router, session?.user?.email])
 
-  // Fetch task counts for tabs (independent of current filters)
-  useEffect(() => {
-    if (status === "authenticated") {
-      refreshTaskCounts()
-    }
-  }, [status, refreshTaskCounts])
-
-  // Refresh task counts when completed task visibility preference changes
-  useEffect(() => {
-    if (status === "authenticated" && preferencesData?.preferences?.completedTaskVisibility !== undefined) {
-      refreshTaskCounts()
-    }
-  }, [preferencesData?.preferences?.completedTaskVisibility, status, refreshTaskCounts])
-
   const handleTaskCreate = async (taskData: any) => {
     const result = await createTask(taskData)
     if (result.success) {
       // Refresh task counts after creating a task
-      refreshTaskCounts()
+      refreshCounts()
+    }
+    return result
+  }
+
+  const handleTaskComplete = async (taskId: string) => {
+    const result = await completeTask(taskId)
+    if (result.success) {
+      // Refresh task counts after completing a task
+      refreshCounts()
+    }
+    return result
+  }
+
+  const handleTaskReopen = async (taskId: string) => {
+    const result = await reopenTask(taskId)
+    if (result.success) {
+      // Refresh task counts after reopening a task
+      refreshCounts()
+    }
+    return result
+  }
+
+  const handleTaskDelete = async (taskId: string) => {
+    const result = await deleteTask(taskId)
+    if (result.success) {
+      // Refresh task counts after deleting a task
+      refreshCounts()
     }
     return result
   }
@@ -245,11 +192,11 @@ export default function Dashboard() {
             loading={loading}
             error={error}
             onTaskUpdate={updateTask}
-            onTaskDelete={deleteTask}
-            onTaskComplete={completeTask}
-            onTaskReopen={reopenTask}
+            onTaskDelete={handleTaskDelete}
+            onTaskComplete={handleTaskComplete}
+            onTaskReopen={handleTaskReopen}
             onTaskCreate={handleTaskCreate}
-            onTaskCreated={refreshTaskCounts}
+            onTaskCreated={refreshCounts}
           />
         </div>
       </main>
