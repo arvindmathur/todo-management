@@ -29,9 +29,13 @@ let connectionPromise: Promise<void> | null = null;
 let lastConnectionCheck = 0;
 const CONNECTION_CHECK_INTERVAL = 30000; // 30 seconds
 
-// Connection pool monitoring
+// Connection pool monitoring with environment-specific limits
 let activeConnections = 0;
-const MAX_CONNECTIONS = process.env.NODE_ENV === 'production' ? 5 : 10;
+const MAX_CONNECTIONS = process.env.NODE_ENV === 'production' ? 3 : 8; // Reduced for production to account for shared database
+
+// Environment-specific connection tracking
+const ENVIRONMENT_ID = process.env.VERCEL ? 'vercel' : 'local';
+const CONNECTION_PREFIX = `${ENVIRONMENT_ID}-${process.pid || 'unknown'}`;
 
 // Function to ensure connection is established with connection pooling
 export async function ensureDatabaseConnection(): Promise<void> {
@@ -51,25 +55,31 @@ export async function ensureDatabaseConnection(): Promise<void> {
     try {
       // Check if we're at connection limit
       if (activeConnections >= MAX_CONNECTIONS) {
-        console.warn(`Connection limit reached (${activeConnections}/${MAX_CONNECTIONS}), waiting...`);
-        // Wait for a connection to be released
-        await new Promise(resolve => setTimeout(resolve, 100));
+        console.warn(`[${CONNECTION_PREFIX}] Connection limit reached (${activeConnections}/${MAX_CONNECTIONS}), waiting...`);
+        // Wait for a connection to be released with exponential backoff
+        const waitTime = Math.min(100 * Math.pow(2, activeConnections - MAX_CONNECTIONS), 1000);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
       }
       
       if (!isConnected) {
         activeConnections++;
         await prisma.$connect();
         isConnected = true;
-        console.log(`Database connected (${activeConnections}/${MAX_CONNECTIONS} active connections)`);
+        console.log(`[${CONNECTION_PREFIX}] Database connected (${activeConnections}/${MAX_CONNECTIONS} active connections)`);
       }
       
-      // Verify connection health
-      await prisma.$queryRaw`SELECT 1`;
+      // Verify connection health with timeout
+      const healthCheckPromise = prisma.$queryRaw`SELECT 1`;
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Health check timeout')), 5000)
+      );
+      
+      await Promise.race([healthCheckPromise, timeoutPromise]);
       lastConnectionCheck = now;
     } catch (error) {
       isConnected = false;
       if (activeConnections > 0) activeConnections--;
-      console.error('Failed to connect to database:', error);
+      console.error(`[${CONNECTION_PREFIX}] Failed to connect to database:`, error);
       throw error;
     } finally {
       connectionPromise = null;
@@ -86,9 +96,9 @@ export async function disconnectDatabase(): Promise<void> {
       await prisma.$disconnect();
       isConnected = false;
       if (activeConnections > 0) activeConnections--;
-      console.log(`Database disconnected (${activeConnections}/${MAX_CONNECTIONS} active connections)`);
+      console.log(`[${CONNECTION_PREFIX}] Database disconnected (${activeConnections}/${MAX_CONNECTIONS} active connections)`);
     } catch (error) {
-      console.warn('Error during database disconnect:', error);
+      console.warn(`[${CONNECTION_PREFIX}] Error during database disconnect:`, error);
     }
   }
 }
@@ -102,6 +112,7 @@ export async function checkDatabaseHealth(): Promise<{
     active: number;
     max: number;
     utilization: number;
+    environment: string;
   };
 }> {
   try {
@@ -115,7 +126,8 @@ export async function checkDatabaseHealth(): Promise<{
       connectionPool: {
         active: activeConnections,
         max: MAX_CONNECTIONS,
-        utilization: Math.round((activeConnections / MAX_CONNECTIONS) * 100)
+        utilization: Math.round((activeConnections / MAX_CONNECTIONS) * 100),
+        environment: CONNECTION_PREFIX
       }
     };
   } catch (error) {
@@ -126,7 +138,8 @@ export async function checkDatabaseHealth(): Promise<{
       connectionPool: {
         active: activeConnections,
         max: MAX_CONNECTIONS,
-        utilization: Math.round((activeConnections / MAX_CONNECTIONS) * 100)
+        utilization: Math.round((activeConnections / MAX_CONNECTIONS) * 100),
+        environment: CONNECTION_PREFIX
       }
     };
   }
@@ -134,7 +147,7 @@ export async function checkDatabaseHealth(): Promise<{
 
 // Connection pool cleanup function
 export async function cleanupConnectionPool(): Promise<void> {
-  console.log('Cleaning up connection pool...');
+  console.log(`[${CONNECTION_PREFIX}] Cleaning up connection pool...`);
   await disconnectDatabase();
   activeConnections = 0;
   isConnected = false;
@@ -187,6 +200,7 @@ export function getConnectionPoolStats() {
     utilization: Math.round((activeConnections / MAX_CONNECTIONS) * 100),
     isConnected,
     lastCheck: lastConnectionCheck,
-    timeSinceLastCheck: Date.now() - lastConnectionCheck
+    timeSinceLastCheck: Date.now() - lastConnectionCheck,
+    environment: CONNECTION_PREFIX
   };
 }

@@ -109,12 +109,17 @@ export class DatabaseConnection {
     
     this.isProcessingQueue = true;
     
-    // Process operations with limited concurrency
-    const CONCURRENT_OPERATIONS = process.env.NODE_ENV === 'production' ? 3 : 5;
+    // Process operations with limited concurrency (reduced for shared database)
+    const CONCURRENT_OPERATIONS = process.env.NODE_ENV === 'production' ? 2 : 3;
     
     while (this.operationQueue.length > 0) {
       const batch = this.operationQueue.splice(0, CONCURRENT_OPERATIONS);
       await Promise.all(batch.map(op => op().catch(console.error)));
+      
+      // Add small delay between batches to prevent overwhelming the database
+      if (this.operationQueue.length > 0) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
     }
     
     this.isProcessingQueue = false;
