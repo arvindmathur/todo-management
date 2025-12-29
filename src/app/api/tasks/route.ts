@@ -13,6 +13,7 @@ import {
   requireResource 
 } from "@/lib/api-error-handler"
 import { ValidationError } from "@/lib/errors"
+import { DatabaseConnection } from "@/lib/db-connection"
 
 const createTaskSchema = z.object({
   title: z.string().min(1, "Title is required").max(500, "Title too long"),
@@ -31,22 +32,25 @@ const taskFiltersSchema = z.object({
   projectId: z.string().optional(),
   contextId: z.string().optional(),
   areaId: z.string().optional(),
-  dueDate: z.enum(["today", "overdue", "upcoming", "no-due-date"]).optional(),
+  dueDate: z.enum(["today", "overdue", "upcoming", "no-due-date", "focus"]).optional(),
   search: z.string().optional(),
   limit: z.string().transform(Number).optional(),
   offset: z.string().transform(Number).optional(),
 })
 
-// Get tasks with filtering
+// Get tasks with filtering and improved connection management
 export const GET = withErrorHandling(async (request: NextRequest) => {
   const session = await getServerSession(authOptions)
   requireAuth(session)
+
+  // Ensure healthy database connection before proceeding
+  await DatabaseConnection.ensureHealthyConnection()
 
   const { searchParams } = new URL(request.url)
   const filters = validateRequest(taskFiltersSchema, Object.fromEntries(searchParams), "Task filters")
   const paginationParams = createPaginationParams(searchParams)
 
-  // Use optimized database service with caching
+  // Use optimized database service with enhanced connection management
   const result = await OptimizedDbService.getTasks(
     session.user.tenantId,
     session.user.id,
@@ -57,16 +61,21 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
     }
   )
 
-  // Log data access (less frequently for performance)
-  if (Math.random() < 0.1) { // Log 10% of requests to reduce overhead
-    await auditLogger.logDataAccess(
-      session.user.tenantId,
-      session.user.id,
-      "task",
-      "READ",
-      result.tasks.length,
-      request
-    )
+  // Reduced audit logging frequency to minimize database load
+  if (Math.random() < 0.05) { // Log 5% of requests (reduced from 10%)
+    try {
+      await auditLogger.logDataAccess(
+        session.user.tenantId,
+        session.user.id,
+        "task",
+        "READ",
+        result.tasks.length,
+        request
+      )
+    } catch (auditError) {
+      // Don't fail the request if audit logging fails
+      console.warn('Audit logging failed:', auditError)
+    }
   }
 
   // Create paginated response
@@ -79,46 +88,80 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
   return NextResponse.json(paginatedResult)
 }, "getTasks")
 
-// Create new task
+// Create new task with improved connection management
 export const POST = withErrorHandling(async (request: NextRequest) => {
   const session = await getServerSession(authOptions)
   requireAuth(session)
 
+  // Ensure healthy database connection before proceeding
+  await DatabaseConnection.ensureHealthyConnection()
+
   const body = await request.json()
   const validatedData = validateRequest(createTaskSchema, body, "Task creation")
 
-  // Validate related entities belong to user
+  // Validate related entities belong to user with optimized queries
+  const validationPromises = []
+  
   if (validatedData.projectId) {
-    const project = await prisma.project.findFirst({
-      where: {
-        id: validatedData.projectId,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
-    requireResource(project, "Project")
+    validationPromises.push(
+      DatabaseConnection.withRetry(
+        () => prisma.project.findFirst({
+          where: {
+            id: validatedData.projectId,
+            userId: session.user.id,
+            tenantId: session.user.tenantId,
+          },
+          select: { id: true } // Only select what we need
+        }),
+        'validate-project'
+      ).then(project => {
+        requireResource(project, "Project")
+        return project
+      })
+    )
   }
 
   if (validatedData.contextId) {
-    const context = await prisma.context.findFirst({
-      where: {
-        id: validatedData.contextId,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
-    requireResource(context, "Context")
+    validationPromises.push(
+      DatabaseConnection.withRetry(
+        () => prisma.context.findFirst({
+          where: {
+            id: validatedData.contextId,
+            userId: session.user.id,
+            tenantId: session.user.tenantId,
+          },
+          select: { id: true } // Only select what we need
+        }),
+        'validate-context'
+      ).then(context => {
+        requireResource(context, "Context")
+        return context
+      })
+    )
   }
 
   if (validatedData.areaId) {
-    const area = await prisma.area.findFirst({
-      where: {
-        id: validatedData.areaId,
-        userId: session.user.id,
-        tenantId: session.user.tenantId,
-      }
-    })
-    requireResource(area, "Area")
+    validationPromises.push(
+      DatabaseConnection.withRetry(
+        () => prisma.area.findFirst({
+          where: {
+            id: validatedData.areaId,
+            userId: session.user.id,
+            tenantId: session.user.tenantId,
+          },
+          select: { id: true } // Only select what we need
+        }),
+        'validate-area'
+      ).then(area => {
+        requireResource(area, "Area")
+        return area
+      })
+    )
+  }
+
+  // Wait for all validations to complete
+  if (validationPromises.length > 0) {
+    await Promise.all(validationPromises)
   }
 
   // Validate and convert dueDate if provided
@@ -137,50 +180,64 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
     }
   }
 
-  const task = await prisma.task.create({
-    data: {
-      title: validatedData.title,
-      description: validatedData.description,
-      priority: validatedData.priority,
-      dueDate,
-      projectId: validatedData.projectId,
-      contextId: validatedData.contextId,
-      areaId: validatedData.areaId,
-      tags: validatedData.tags,
-      userId: session.user.id,
-      tenantId: session.user.tenantId,
-    },
-    include: {
-      project: {
-        select: { id: true, name: true }
+  // Create task with retry logic
+  const task = await DatabaseConnection.withRetry(
+    () => prisma.task.create({
+      data: {
+        title: validatedData.title,
+        description: validatedData.description,
+        priority: validatedData.priority,
+        dueDate,
+        projectId: validatedData.projectId,
+        contextId: validatedData.contextId,
+        areaId: validatedData.areaId,
+        tags: validatedData.tags,
+        userId: session.user.id,
+        tenantId: session.user.tenantId,
       },
-      context: {
-        select: { id: true, name: true }
-      },
-      area: {
-        select: { id: true, name: true }
+      include: {
+        project: {
+          select: { id: true, name: true }
+        },
+        context: {
+          select: { id: true, name: true }
+        },
+        area: {
+          select: { id: true, name: true }
+        }
       }
-    }
-  })
-
-  // Log task creation
-  await auditLogger.logCreate(
-    session.user.tenantId,
-    session.user.id,
-    "task",
-    task.id,
-    {
-      title: task.title,
-      priority: task.priority,
-      projectId: task.projectId,
-      contextId: task.contextId,
-      areaId: task.areaId
-    },
-    request
+    }),
+    'create-task'
   )
 
+  // Log task creation (with error handling)
+  try {
+    await auditLogger.logCreate(
+      session.user.tenantId,
+      session.user.id,
+      "task",
+      task.id,
+      {
+        title: task.title,
+        priority: task.priority,
+        projectId: task.projectId,
+        contextId: task.contextId,
+        areaId: task.areaId
+      },
+      request
+    )
+  } catch (auditError) {
+    // Don't fail the request if audit logging fails
+    console.warn('Audit logging failed:', auditError)
+  }
+
   // Invalidate relevant caches
-  await OptimizedDbService.invalidateUserCaches(session.user.tenantId, session.user.id)
+  try {
+    await OptimizedDbService.invalidateUserCaches(session.user.tenantId, session.user.id)
+  } catch (cacheError) {
+    // Don't fail the request if cache invalidation fails
+    console.warn('Cache invalidation failed:', cacheError)
+  }
 
   return NextResponse.json(
     { 

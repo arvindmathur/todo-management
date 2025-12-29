@@ -7,23 +7,23 @@ import Link from "next/link"
 import { useTasks } from "@/hooks/useTasks"
 import { useTaskViews } from "@/hooks/useTaskViews"
 import { TaskList } from "@/components/tasks/TaskList"
-import { TaskCreateForm } from "@/components/tasks/TaskCreateForm"
-import { TaskFiltersComponent } from "@/components/tasks/TaskFilters"
 import { TaskViewTabs } from "@/components/tasks/TaskViewTabs"
+import { CollapsibleFilters } from "@/components/tasks/CollapsibleFilters"
 import { TaskFilters } from "@/types/task"
 import VersionDisplay from "@/components/ui/VersionDisplay"
 
 export default function Dashboard() {
   const { data: session, status } = useSession()
   const router = useRouter()
-  const [showCreateForm, setShowCreateForm] = useState(false)
   const [activeView, setActiveView] = useState("all")
+  const [showAdditionalFilters, setShowAdditionalFilters] = useState(false)
   const [taskCounts, setTaskCounts] = useState({
     all: 0,
     today: 0,
     overdue: 0,
     upcoming: 0,
     noDueDate: 0,
+    focus: 0,
   })
 
   const {
@@ -84,6 +84,8 @@ export default function Dashboard() {
         overdue: overdueTasksResponse.totalCount || overdueTasksResponse.total || overdueTasks.length || 0,
         upcoming: upcomingTasksResponse.totalCount || upcomingTasksResponse.total || upcomingTasks.length || 0,
         noDueDate: noDueDateTasksResponse.totalCount || noDueDateTasksResponse.total || noDueDateTasks.length || 0,
+        focus: (overdueTasksResponse.totalCount || overdueTasksResponse.total || overdueTasks.length || 0) + 
+               (todayTasksResponse.totalCount || todayTasksResponse.total || todayTasks.length || 0),
       })
     } catch (err) {
       console.error("Failed to fetch task counts:", err)
@@ -94,6 +96,7 @@ export default function Dashboard() {
         overdue: 0,
         upcoming: 0,
         noDueDate: 0,
+        focus: 0,
       })
     }
   }, [status])
@@ -111,21 +114,20 @@ export default function Dashboard() {
     }
   }, [status, refreshTaskCounts])
 
+  const handleTaskCreate = async (taskData: any) => {
+    const result = await createTask(taskData)
+    if (result.success) {
+      // Refresh task counts after creating a task
+      refreshTaskCounts()
+    }
+    return result
+  }
+
   const handleViewChange = (view: string, viewFilters: Partial<TaskFilters>) => {
     setActiveView(view)
     
     // Replace all filters with the new ones (don't merge)
     updateFilters(viewFilters, true) // Add a flag to replace instead of merge
-  }
-
-  const handleCreateTask = async (taskData: any) => {
-    const result = await createTask(taskData)
-    if (result.success) {
-      setShowCreateForm(false)
-      // Refresh task counts after creating a task
-      refreshTaskCounts()
-    }
-    return result
   }
 
   if (status === "loading") {
@@ -144,67 +146,59 @@ export default function Dashboard() {
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
+          <div className="flex justify-between h-14">
             <div className="flex items-center">
-              <h1 className="text-xl font-semibold">Todo Management</h1>
+              <h1 className="text-lg sm:text-xl font-semibold">ToDo Management</h1>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 sm:space-x-4">
               <Link
                 href="/dashboard/preferences"
-                className="text-gray-700 hover:text-gray-900 px-3 py-2 rounded-md text-sm font-medium"
+                className="text-gray-700 hover:text-gray-900 px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium"
               >
-                Preferences
+                <span className="hidden sm:inline">Preferences</span>
+                <span className="sm:hidden">Prefs</span>
               </Link>
-              <span className="text-gray-700">Welcome, {session.user.name}</span>
+              <span className="text-gray-700 text-xs sm:text-sm hidden sm:inline">Welcome, {session.user.name}</span>
               <button
                 onClick={() => signOut({ callbackUrl: "/" })}
-                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                className="bg-red-600 hover:bg-red-700 text-white px-2 sm:px-4 py-2 rounded-md text-xs sm:text-sm font-medium"
               >
-                Sign Out
+                <span className="hidden sm:inline">Sign Out</span>
+                <span className="sm:hidden">Out</span>
               </button>
             </div>
           </div>
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          {/* Header with Create Task Button */}
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h2 className="text-2xl font-bold text-gray-900">Tasks</h2>
-              <p className="text-gray-600">Manage your tasks and stay organized</p>
-            </div>
-            <button
-              onClick={() => setShowCreateForm(!showCreateForm)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium flex items-center"
-            >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              New Task
-            </button>
+      <main className="max-w-7xl mx-auto py-4 sm:px-6 lg:px-8">
+        <div className="px-4 py-4 sm:px-0">
+          {/* Section Header with Tagline */}
+          <div className="mb-4">
+            <h2 className="text-2xl font-bold text-gray-900">Tasks</h2>
+            <p className="text-gray-600">Manage your action items and stay organized</p>
           </div>
 
-          {/* Create Task Form */}
-          {showCreateForm && (
-            <div className="mb-6">
-              <TaskCreateForm
-                onSubmit={handleCreateTask}
-                onCancel={() => setShowCreateForm(false)}
-                isLoading={loading}
-              />
-            </div>
-          )}
-
           {/* Task View Tabs */}
-          <div className="mb-6">
+          <div className="mb-4">
             <TaskViewTabs
               activeView={activeView}
               onViewChange={handleViewChange}
               taskCounts={taskCounts}
+              showAdditionalFilters={showAdditionalFilters}
+              onToggleAdditionalFilters={() => setShowAdditionalFilters(!showAdditionalFilters)}
+              filters={filters}
             />
           </div>
+
+          {/* Collapsible Additional Filters */}
+          <CollapsibleFilters
+            isOpen={showAdditionalFilters}
+            filters={filters}
+            onFiltersChange={updateFilters}
+            onClearFilters={clearFilters}
+            isLoading={loading}
+          />
 
           {/* Filters */}
           <div className="mb-6">
@@ -239,6 +233,8 @@ export default function Dashboard() {
             onTaskDelete={deleteTask}
             onTaskComplete={completeTask}
             onTaskReopen={reopenTask}
+            onTaskCreate={handleTaskCreate}
+            onTaskCreated={refreshTaskCounts}
           />
         </div>
       </main>

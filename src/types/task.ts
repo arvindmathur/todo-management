@@ -60,7 +60,7 @@ export interface TaskFilters {
   projectId?: string
   contextId?: string
   areaId?: string
-  dueDate?: "today" | "overdue" | "upcoming" | "no-due-date"
+  dueDate?: "today" | "overdue" | "upcoming" | "no-due-date" | "focus"
   search?: string
   limit?: number
   offset?: number

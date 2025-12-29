@@ -263,14 +263,17 @@ export class OptimizedDbService {
     if (contextId) where.contextId = contextId
     if (areaId) where.areaId = areaId
 
+    // Handle search filter
+    const searchConditions = []
     if (search) {
-      where.OR = [
+      searchConditions.push(
         { title: { contains: search, mode: "insensitive" } },
-        { description: { contains: search, mode: "insensitive" } },
-      ]
+        { description: { contains: search, mode: "insensitive" } }
+      )
     }
 
     // Handle date filters
+    const dateConditions = []
     if (dueDate) {
       const now = new Date()
       // Use local timezone for date comparisons to match user expectations
@@ -294,7 +297,27 @@ export class OptimizedDbService {
         case "no-due-date":
           where.dueDate = null
           break
+        case "focus":
+          // Focus view: overdue OR today (excludes upcoming and no-due-date)
+          dateConditions.push(
+            { dueDate: { lt: today } }, // Overdue
+            { dueDate: { gte: today, lt: tomorrow } } // Today
+          )
+          break
       }
+    }
+
+    // Combine OR conditions if needed
+    if (searchConditions.length > 0 && dateConditions.length > 0) {
+      // Both search and focus filters - need to combine them properly
+      where.AND = [
+        { OR: searchConditions },
+        { OR: dateConditions }
+      ]
+    } else if (searchConditions.length > 0) {
+      where.OR = searchConditions
+    } else if (dateConditions.length > 0) {
+      where.OR = dateConditions
     }
 
     // Use optimized query with selective includes

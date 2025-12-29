@@ -18,6 +18,7 @@ export const VERSION_HISTORY = {
   '2.05.0': 'Excel-like editing: Click-to-edit task titles with mobile long-press support',
   '2.06.0': 'Complete Excel-like editing: Click-to-edit due dates and priority cycling',
   '2.07.0': 'Improved priority selection: Dropdown menu with all 4 priority options',
+  '2.08.0': 'Advanced database connection management: Connection pooling, health monitoring, and serverless optimization',
 };
 
 export function getVersionInfo() {
