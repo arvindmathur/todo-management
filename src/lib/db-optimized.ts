@@ -1,18 +1,22 @@
 import { prisma } from "./prisma"
 import { cache } from "./cache"
+import { withDatabaseRetry } from "./db-connection"
 
 // Optimized database queries with caching
 export class OptimizedDbService {
   // Get user preferences with caching
   static async getUserPreferences(userId: string) {
     return cache.getUserPreferences(userId, async () => {
-      return prisma.user.findUnique({
-        where: { id: userId },
-        select: {
-          preferences: true,
-          gtdEnabled: true,
-        },
-      })
+      return withDatabaseRetry(
+        () => prisma.user.findUnique({
+          where: { id: userId },
+          select: {
+            preferences: true,
+            gtdEnabled: true,
+          },
+        }),
+        'getUserPreferences'
+      )
     })
   }
 
@@ -22,16 +26,19 @@ export class OptimizedDbService {
     
     return cache.getOrSet(cacheKey, async () => {
       // Use a single query with conditional aggregation for better performance
-      const result = await prisma.task.groupBy({
-        by: ["status"],
-        where: {
-          tenantId,
-          userId,
-        },
-        _count: {
-          id: true,
-        },
-      })
+      const result = await withDatabaseRetry(
+        () => prisma.task.groupBy({
+          by: ["status"],
+          where: {
+            tenantId,
+            userId,
+          },
+          _count: {
+            id: true,
+          },
+        }),
+        'getTaskCounts-groupBy'
+      )
 
       // Transform to expected format
       const counts = {
@@ -54,33 +61,42 @@ export class OptimizedDbService {
       tomorrow.setDate(tomorrow.getDate() + 1)
 
       const [overdue, todayTasks, upcoming] = await Promise.all([
-        prisma.task.count({
-          where: {
-            tenantId,
-            userId,
-            status: "active",
-            dueDate: { lt: today },
-          },
-        }),
-        prisma.task.count({
-          where: {
-            tenantId,
-            userId,
-            status: "active",
-            dueDate: { gte: today, lt: tomorrow },
-          },
-        }),
-        prisma.task.count({
-          where: {
-            tenantId,
-            userId,
-            status: "active",
-            dueDate: { 
-              gte: tomorrow,
-              lt: new Date(tomorrow.getTime() + 7 * 24 * 60 * 60 * 1000) // 7 days from tomorrow
+        withDatabaseRetry(
+          () => prisma.task.count({
+            where: {
+              tenantId,
+              userId,
+              status: "active",
+              dueDate: { lt: today },
             },
-          },
-        }),
+          }),
+          'getTaskCounts-overdue'
+        ),
+        withDatabaseRetry(
+          () => prisma.task.count({
+            where: {
+              tenantId,
+              userId,
+              status: "active",
+              dueDate: { gte: today, lt: tomorrow },
+            },
+          }),
+          'getTaskCounts-today'
+        ),
+        withDatabaseRetry(
+          () => prisma.task.count({
+            where: {
+              tenantId,
+              userId,
+              status: "active",
+              dueDate: { 
+                gte: tomorrow,
+                lt: new Date(tomorrow.getTime() + 7 * 24 * 60 * 60 * 1000) // 7 days from tomorrow
+              },
+            },
+          }),
+          'getTaskCounts-upcoming'
+        ),
       ])
 
       counts.overdue = overdue
@@ -266,38 +282,44 @@ export class OptimizedDbService {
 
     // Use optimized query with selective includes
     const [tasks, totalCount] = await Promise.all([
-      prisma.task.findMany({
-        where,
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          status: true,
-          priority: true,
-          dueDate: true,
-          completedAt: true,
-          tags: true,
-          createdAt: true,
-          updatedAt: true,
-          project: {
-            select: { id: true, name: true },
+      withDatabaseRetry(
+        () => prisma.task.findMany({
+          where,
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            status: true,
+            priority: true,
+            dueDate: true,
+            completedAt: true,
+            tags: true,
+            createdAt: true,
+            updatedAt: true,
+            project: {
+              select: { id: true, name: true },
+            },
+            context: {
+              select: { id: true, name: true, icon: true },
+            },
+            area: {
+              select: { id: true, name: true, color: true },
+            },
           },
-          context: {
-            select: { id: true, name: true, icon: true },
-          },
-          area: {
-            select: { id: true, name: true, color: true },
-          },
-        },
-        orderBy: [
-          { priority: "desc" },
-          { dueDate: "asc" },
-          { createdAt: "desc" },
-        ],
-        take: limit,
-        skip: offset,
-      }),
-      prisma.task.count({ where }),
+          orderBy: [
+            { priority: "desc" },
+            { dueDate: "asc" },
+            { createdAt: "desc" },
+          ],
+          take: limit,
+          skip: offset,
+        }),
+        'getTasks-findMany'
+      ),
+      withDatabaseRetry(
+        () => prisma.task.count({ where }),
+        'getTasks-count'
+      ),
     ])
 
     return {
