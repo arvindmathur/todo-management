@@ -13,6 +13,12 @@ export interface UserPreferences {
     browser: boolean
     weeklyReview: boolean
   }
+  emailNotifications?: {
+    summaryEnabled: boolean
+    summaryFrequency: "daily" | "weekly"
+    remindersEnabled: boolean
+    defaultReminderDays: number // 1-30 days before due date
+  }
   gtdOnboardingCompleted?: boolean
   taskDefaults?: {
     priority: "urgent" | "high" | "medium" | "low"

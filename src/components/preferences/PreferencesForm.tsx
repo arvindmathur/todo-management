@@ -43,6 +43,12 @@ export function PreferencesForm() {
           browser: false,
           weeklyReview: false
         },
+        emailNotifications: {
+          summaryEnabled: true,
+          summaryFrequency: "daily",
+          remindersEnabled: true,
+          defaultReminderDays: 1
+        },
         taskDefaults: {
           priority: "medium",
           dueDate: "today"
@@ -805,6 +811,132 @@ export function PreferencesForm() {
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
               />
             </label>
+          </div>
+        </div>
+
+        {/* Email Notification Settings */}
+        <div className="bg-white shadow rounded-lg p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Email Notification Settings</h3>
+          
+          <div className="space-y-6">
+            {/* Summary Emails */}
+            <div>
+              <label className="flex items-center justify-between mb-4">
+                <div>
+                  <span className="text-sm font-medium text-gray-900">Daily/Weekly Task Summaries</span>
+                  <p className="text-sm text-gray-500">Receive email summaries of your tasks at 6am local time</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={formData.emailNotifications?.summaryEnabled || false}
+                  onChange={(e) => handlePreferenceUpdate({ 
+                    emailNotifications: {
+                      ...formData.emailNotifications,
+                      summaryEnabled: e.target.checked
+                    }
+                  })}
+                  disabled={isUpdating || !formData.notifications.email}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+                />
+              </label>
+
+              {formData.emailNotifications?.summaryEnabled && formData.notifications.email && (
+                <div className="ml-4 pl-4 border-l-2 border-gray-200">
+                  <label htmlFor="summary-frequency" className="block text-sm font-medium text-gray-700 mb-2">
+                    Summary Frequency
+                  </label>
+                  <select
+                    id="summary-frequency"
+                    value={formData.emailNotifications?.summaryFrequency || "daily"}
+                    onChange={(e) => handlePreferenceUpdate({ 
+                      emailNotifications: {
+                        ...formData.emailNotifications,
+                        summaryFrequency: e.target.value as "daily" | "weekly"
+                      }
+                    })}
+                    disabled={isUpdating}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+                  >
+                    <option value="daily">Daily (every morning at 6am)</option>
+                    <option value="weekly">Weekly (Monday mornings at 6am)</option>
+                  </select>
+                  <p className="mt-2 text-sm text-gray-500">
+                    Daily summaries include Focus tasks (overdue + today), tomorrow's tasks, and yesterday's completed tasks.
+                    Weekly summaries include Focus tasks (overdue + this week), next week's tasks, and last week's completed tasks.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Task Reminders */}
+            <div>
+              <label className="flex items-center justify-between mb-4">
+                <div>
+                  <span className="text-sm font-medium text-gray-900">Task Reminders</span>
+                  <p className="text-sm text-gray-500">Receive email reminders before tasks are due</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={formData.emailNotifications?.remindersEnabled || false}
+                  onChange={(e) => handlePreferenceUpdate({ 
+                    emailNotifications: {
+                      ...formData.emailNotifications,
+                      remindersEnabled: e.target.checked
+                    }
+                  })}
+                  disabled={isUpdating || !formData.notifications.email}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
+                />
+              </label>
+
+              {formData.emailNotifications?.remindersEnabled && formData.notifications.email && (
+                <div className="ml-4 pl-4 border-l-2 border-gray-200">
+                  <label htmlFor="default-reminder-days" className="block text-sm font-medium text-gray-700 mb-2">
+                    Default Reminder Days
+                  </label>
+                  <select
+                    id="default-reminder-days"
+                    value={formData.emailNotifications?.defaultReminderDays || 1}
+                    onChange={(e) => handlePreferenceUpdate({ 
+                      emailNotifications: {
+                        ...formData.emailNotifications,
+                        defaultReminderDays: parseInt(e.target.value)
+                      }
+                    })}
+                    disabled={isUpdating}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+                  >
+                    <option value={1}>1 day before</option>
+                    <option value={2}>2 days before</option>
+                    <option value={3}>3 days before</option>
+                    <option value={7}>1 week before</option>
+                    <option value={14}>2 weeks before</option>
+                  </select>
+                  <p className="mt-2 text-sm text-gray-500">
+                    Default number of days before due date to send reminder emails. You can customize this per task when creating or editing tasks.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Disabled state message */}
+            {!formData.notifications.email && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-yellow-800">Email notifications disabled</h3>
+                    <div className="mt-2 text-sm text-yellow-700">
+                      <p>Enable "Email notifications" above to configure summary emails and task reminders.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

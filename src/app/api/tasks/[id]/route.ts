@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { auditLogger } from "@/lib/audit-logger"
 import { OptimizedDbService } from "@/lib/db-optimized"
+import { NotificationScheduler } from "@/lib/email/scheduler"
 
 const updateTaskSchema = z.object({
   title: z.string().min(1, "Title is required").max(500, "Title too long").optional(),
@@ -16,6 +17,8 @@ const updateTaskSchema = z.object({
   areaId: z.string().optional().nullable(),
   tags: z.array(z.string()).optional(),
   status: z.enum(["active", "completed", "archived"]).optional(),
+  reminderEnabled: z.boolean().optional(),
+  reminderDays: z.number().min(1).max(30).optional(),
 })
 
 // Get single task
@@ -220,6 +223,38 @@ export async function PUT(
       }
     })
 
+    // Handle reminder scheduling if reminder fields were updated
+    if (validatedData.reminderEnabled !== undefined || 
+        validatedData.reminderDays !== undefined || 
+        validatedData.dueDate !== undefined ||
+        validatedData.status === "completed") {
+      
+      try {
+        // Get user preferences for timezone
+        const user = await prisma.user.findUnique({
+          where: { id: session.user.id },
+          select: { preferences: true }
+        });
+        
+        const preferences = (user?.preferences as any) || {};
+        const userTimezone = preferences.timezone || 'UTC';
+
+        // Update reminder scheduling
+        await NotificationScheduler.updateTaskReminder(
+          task.id,
+          session.user.id,
+          session.user.tenantId,
+          task.dueDate,
+          task.reminderEnabled,
+          task.reminderDays || 1,
+          userTimezone
+        );
+      } catch (reminderError) {
+        // Don't fail task update if reminder scheduling fails
+        console.warn('Failed to update task reminder:', reminderError);
+      }
+    }
+
     // Log task update
     await auditLogger.logUpdate(
       session.user.tenantId,
@@ -302,6 +337,14 @@ export async function DELETE(
     await prisma.task.delete({
       where: { id: params.id }
     })
+
+    // Cancel any pending reminders for this task
+    try {
+      await NotificationScheduler.cancelTaskNotifications(params.id);
+    } catch (reminderError) {
+      // Don't fail task deletion if reminder cancellation fails
+      console.warn('Failed to cancel task reminders:', reminderError);
+    }
 
     // Log task deletion
     await auditLogger.logDelete(

@@ -44,14 +44,15 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   
-  users         User[]
-  tasks         Task[]
-  projects      Project[]
-  contexts      Context[]
-  areas         Area[]
-  inboxItems    InboxItem[]
-  weeklyReviews WeeklyReview[]
-  auditLogs     AuditLog[]
+  users              User[]
+  tasks              Task[]
+  projects           Project[]
+  contexts           Context[]
+  areas              Area[]
+  inboxItems         InboxItem[]
+  weeklyReviews      WeeklyReview[]
+  auditLogs          AuditLog[]
+  emailNotifications EmailNotification[]
 }
 
 model User {
@@ -64,21 +65,25 @@ model User {
   tenantId      String
   gtdEnabled    Boolean   @default(false)
   preferences   Json      @default("{}")
+  isAdmin       Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   
-  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  accounts      Account[]
-  sessions      Session[]
-  tasks         Task[]
-  projects      Project[]
-  contexts      Context[]
-  areas         Area[]
-  inboxItems    InboxItem[]
-  weeklyReviews WeeklyReview[]
-  auditLogs     AuditLog[]
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  accounts          Account[]
+  sessions          Session[]
+  tasks             Task[]
+  projects          Project[]
+  contexts          Context[]
+  areas             Area[]
+  inboxItems        InboxItem[]
+  weeklyReviews     WeeklyReview[]
+  auditLogs         AuditLog[]
+  emailNotifications EmailNotification[]
 
   @@index([tenantId])
+  @@index([email])
+  @@index([isAdmin])
 }
 
 model VerificationToken {
@@ -104,6 +109,8 @@ model Task {
   contextId       String?
   areaId          String?
   tags            String[]  @default([])
+  reminderEnabled Boolean   @default(false)
+  reminderDays    Int?      // Days before due date to send reminder
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -119,6 +126,7 @@ model Task {
   @@index([tenantId, userId, status])
   @@index([tenantId, userId, dueDate])
   @@index([tenantId, userId, completedAt])
+  @@index([tenantId, reminderEnabled, dueDate])
 }
 
 model Project {
@@ -236,4 +244,33 @@ model AuditLog {
   @@index([tenantId, entityType])
   @@index([tenantId, timestamp])
   @@index([tenantId, userId, timestamp])
+}
+
+model EmailNotification {
+  id            String    @id @default(cuid())
+  tenantId      String
+  userId        String
+  type          String    // "summary" or "reminder"
+  frequency     String?   // "daily" or "weekly" (for summary emails)
+  taskId        String?   // For reminder emails
+  scheduledFor  DateTime  // When to send the email
+  sentAt        DateTime? // When the email was actually sent
+  status        String    @default("pending") // "pending", "sent", "failed", "cancelled"
+  emailContent  Json?     // Cached email content
+  errorMessage  String?   // Error details if failed
+  retryCount    Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([tenantId, type])
+  @@index([tenantId, status])
+  @@index([tenantId, scheduledFor])
+  @@index([tenantId, userId, type])
+  @@index([tenantId, userId, status])
+  @@index([tenantId, userId, scheduledFor])
+  @@index([status, scheduledFor]) // For processing pending emails
 }

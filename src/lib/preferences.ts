@@ -10,6 +10,12 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
     browser: true,
     weeklyReview: true
   },
+  emailNotifications: {
+    summaryEnabled: true,
+    summaryFrequency: "daily",
+    remindersEnabled: true,
+    defaultReminderDays: 1
+  },
   taskDefaults: {
     priority: "medium",
     dueDate: "today"

@@ -19,6 +19,7 @@ export default function Dashboard() {
   const router = useRouter()
   const [activeView, setActiveView] = useState("focus")
   const [showAdditionalFilters, setShowAdditionalFilters] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [taskCounts, setTaskCounts] = useState({
     all: 0,
     today: 0,
@@ -109,8 +110,11 @@ export default function Dashboard() {
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/auth/signin")
+    } else if (status === "authenticated" && session?.user?.email) {
+      // Check if user is admin (arvind8mathur@gmail.com)
+      setIsAdmin(session.user.email === 'arvind8mathur@gmail.com')
     }
-  }, [status, router])
+  }, [status, router, session?.user?.email])
 
   // Fetch task counts for tabs (independent of current filters)
   useEffect(() => {
@@ -170,6 +174,15 @@ export default function Dashboard() {
                 <span className="hidden sm:inline">Preferences</span>
                 <span className="sm:hidden">Prefs</span>
               </Link>
+              {isAdmin && (
+                <Link
+                  href="/admin"
+                  className="text-blue-700 hover:text-blue-900 px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium border border-blue-200 hover:border-blue-300"
+                >
+                  <span className="hidden sm:inline">Admin Panel</span>
+                  <span className="sm:hidden">Admin</span>
+                </Link>
+              )}
               <span className="text-gray-700 text-xs sm:text-sm hidden sm:inline">Welcome, {session.user.name}</span>
               <button
                 onClick={() => signOut({ callbackUrl: "/" })}

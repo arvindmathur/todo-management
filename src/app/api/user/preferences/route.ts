@@ -19,6 +19,12 @@ const preferencesSchema = z.object({
     browser: z.boolean().optional(),
     weeklyReview: z.boolean().optional(),
   }).optional(),
+  emailNotifications: z.object({
+    summaryEnabled: z.boolean().optional(),
+    summaryFrequency: z.enum(["daily", "weekly"]).optional(),
+    remindersEnabled: z.boolean().optional(),
+    defaultReminderDays: z.number().min(1).max(30).optional(),
+  }).optional(),
   gtdEnabled: z.boolean().optional(),
   gtdOnboardingCompleted: z.boolean().optional(),
   // Task preferences
@@ -145,6 +151,12 @@ export async function PUT(request: NextRequest) {
       updatedPreferences.notifications = {
         ...updatedPreferences.notifications,
         ...validatedData.notifications
+      }
+    }
+    if (validatedData.emailNotifications !== undefined) {
+      updatedPreferences.emailNotifications = {
+        ...updatedPreferences.emailNotifications,
+        ...validatedData.emailNotifications
       }
     }
     if (validatedData.gtdOnboardingCompleted !== undefined) {

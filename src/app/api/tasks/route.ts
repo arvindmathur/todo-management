@@ -14,6 +14,7 @@ import {
 } from "@/lib/api-error-handler"
 import { ValidationError } from "@/lib/errors"
 import { DatabaseConnection } from "@/lib/db-connection"
+import { NotificationScheduler } from "@/lib/email/scheduler"
 
 const createTaskSchema = z.object({
   title: z.string().min(1, "Title is required").max(500, "Title too long"),
@@ -24,6 +25,8 @@ const createTaskSchema = z.object({
   contextId: z.string().optional(),
   areaId: z.string().optional(),
   tags: z.array(z.string()).default([]),
+  reminderEnabled: z.boolean().default(false),
+  reminderDays: z.number().min(1).max(30).optional(),
 })
 
 const taskFiltersSchema = z.object({
@@ -195,6 +198,8 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
         contextId: validatedData.contextId,
         areaId: validatedData.areaId,
         tags: validatedData.tags,
+        reminderEnabled: validatedData.reminderEnabled,
+        reminderDays: validatedData.reminderDays,
         userId: session.user.id,
         tenantId: session.user.tenantId,
       },
@@ -212,6 +217,32 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
     }),
     'create-task'
   )
+
+  // Schedule reminder if enabled and has due date
+  if (validatedData.reminderEnabled && dueDate && validatedData.reminderDays) {
+    try {
+      // Get user preferences for timezone
+      const user = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { preferences: true }
+      });
+      
+      const preferences = (user?.preferences as any) || {};
+      const userTimezone = preferences.timezone || 'UTC';
+
+      await NotificationScheduler.scheduleTaskReminder(
+        session.user.id,
+        session.user.tenantId,
+        task.id,
+        dueDate,
+        validatedData.reminderDays,
+        userTimezone
+      );
+    } catch (reminderError) {
+      // Don't fail task creation if reminder scheduling fails
+      console.warn('Failed to schedule task reminder:', reminderError);
+    }
+  }
 
   // Log task creation (with error handling)
   try {
