@@ -112,20 +112,26 @@ export class OptimizedDbService {
     return cache.getProjectStats(tenantId, userId, async () => {
       // Optimized query using aggregation
       const [projectCounts, taskCounts] = await Promise.all([
-        prisma.project.groupBy({
-          by: ["status"],
-          where: { tenantId, userId },
-          _count: { id: true },
-        }),
-        prisma.task.groupBy({
-          by: ["projectId"],
-          where: {
-            tenantId,
-            userId,
-            projectId: { not: null },
-          },
-          _count: { id: true },
-        }),
+        withDatabaseRetry(
+          () => prisma.project.groupBy({
+            by: ["status"],
+            where: { tenantId, userId },
+            _count: { id: true },
+          }),
+          'getProjectStats-projectCounts'
+        ),
+        withDatabaseRetry(
+          () => prisma.task.groupBy({
+            by: ["projectId"],
+            where: {
+              tenantId,
+              userId,
+              projectId: { not: null },
+            },
+            _count: { id: true },
+          }),
+          'getProjectStats-taskCounts'
+        ),
       ])
 
       const stats = {
@@ -144,66 +150,75 @@ export class OptimizedDbService {
   // Get contexts with caching and optimized query
   static async getContexts(tenantId: string, userId: string) {
     return cache.getContextList(tenantId, userId, async () => {
-      return prisma.context.findMany({
-        where: { tenantId, userId },
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          icon: true,
-          isDefault: true,
-          _count: {
-            select: {
-              tasks: {
-                where: { status: "active" },
+      return withDatabaseRetry(
+        () => prisma.context.findMany({
+          where: { tenantId, userId },
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            icon: true,
+            isDefault: true,
+            _count: {
+              select: {
+                tasks: {
+                  where: { status: "active" },
+                },
               },
             },
           },
-        },
-        orderBy: [
-          { isDefault: "desc" },
-          { name: "asc" },
-        ],
-      })
+          orderBy: [
+            { isDefault: "desc" },
+            { name: "asc" },
+          ],
+        }),
+        'getContexts'
+      )
     })
   }
 
   // Get areas with caching and optimized query
   static async getAreas(tenantId: string, userId: string) {
     return cache.getAreaList(tenantId, userId, async () => {
-      return prisma.area.findMany({
-        where: { tenantId, userId },
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          color: true,
-          _count: {
-            select: {
-              tasks: {
-                where: { status: "active" },
-              },
-              projects: {
-                where: { status: "active" },
+      return withDatabaseRetry(
+        () => prisma.area.findMany({
+          where: { tenantId, userId },
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            color: true,
+            _count: {
+              select: {
+                tasks: {
+                  where: { status: "active" },
+                },
+                projects: {
+                  where: { status: "active" },
+                },
               },
             },
           },
-        },
-        orderBy: { name: "asc" },
-      })
+          orderBy: { name: "asc" },
+        }),
+        'getAreas'
+      )
     })
   }
 
   // Get inbox count with caching
   static async getInboxCount(tenantId: string, userId: string) {
     return cache.getInboxCount(tenantId, userId, async () => {
-      return prisma.inboxItem.count({
-        where: {
-          tenantId,
-          userId,
-          processed: false,
-        },
-      })
+      return withDatabaseRetry(
+        () => prisma.inboxItem.count({
+          where: {
+            tenantId,
+            userId,
+            processed: false,
+          },
+        }),
+        'getInboxCount'
+      )
     })
   }
 
@@ -356,35 +371,41 @@ export class OptimizedDbService {
     if (areaId) where.areaId = areaId
 
     const [projects, totalCount] = await Promise.all([
-      prisma.project.findMany({
-        where,
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          status: true,
-          outcome: true,
-          createdAt: true,
-          updatedAt: true,
-          area: {
-            select: { id: true, name: true, color: true },
-          },
-          _count: {
-            select: {
-              tasks: {
-                where: { status: "active" },
+      withDatabaseRetry(
+        () => prisma.project.findMany({
+          where,
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            status: true,
+            outcome: true,
+            createdAt: true,
+            updatedAt: true,
+            area: {
+              select: { id: true, name: true, color: true },
+            },
+            _count: {
+              select: {
+                tasks: {
+                  where: { status: "active" },
+                },
               },
             },
           },
-        },
-        orderBy: [
-          { status: "asc" },
-          { updatedAt: "desc" },
-        ],
-        take: limit,
-        skip: offset,
-      }),
-      prisma.project.count({ where }),
+          orderBy: [
+            { status: "asc" },
+            { updatedAt: "desc" },
+          ],
+          take: limit,
+          skip: offset,
+        }),
+        'getProjects-findMany'
+      ),
+      withDatabaseRetry(
+        () => prisma.project.count({ where }),
+        'getProjects-count'
+      ),
     ])
 
     return {
@@ -411,27 +432,33 @@ export class OptimizedDbService {
     updates: any
   ) {
     // Validate all tasks belong to user first
-    const taskCount = await prisma.task.count({
-      where: {
-        id: { in: taskIds },
-        tenantId,
-        userId,
-      },
-    })
+    const taskCount = await withDatabaseRetry(
+      () => prisma.task.count({
+        where: {
+          id: { in: taskIds },
+          tenantId,
+          userId,
+        },
+      }),
+      'batchUpdateTasks-validate'
+    )
 
     if (taskCount !== taskIds.length) {
       throw new Error("Some tasks not found or unauthorized")
     }
 
     // Perform batch update
-    const result = await prisma.task.updateMany({
-      where: {
-        id: { in: taskIds },
-        tenantId,
-        userId,
-      },
-      data: updates,
-    })
+    const result = await withDatabaseRetry(
+      () => prisma.task.updateMany({
+        where: {
+          id: { in: taskIds },
+          tenantId,
+          userId,
+        },
+        data: updates,
+      }),
+      'batchUpdateTasks-update'
+    )
 
     // Invalidate caches
     await this.invalidateUserCaches(tenantId, userId)
@@ -446,26 +473,32 @@ export class OptimizedDbService {
     taskIds: string[]
   ) {
     // Validate all tasks belong to user first
-    const taskCount = await prisma.task.count({
-      where: {
-        id: { in: taskIds },
-        tenantId,
-        userId,
-      },
-    })
+    const taskCount = await withDatabaseRetry(
+      () => prisma.task.count({
+        where: {
+          id: { in: taskIds },
+          tenantId,
+          userId,
+        },
+      }),
+      'batchDeleteTasks-validate'
+    )
 
     if (taskCount !== taskIds.length) {
       throw new Error("Some tasks not found or unauthorized")
     }
 
     // Perform batch delete
-    const result = await prisma.task.deleteMany({
-      where: {
-        id: { in: taskIds },
-        tenantId,
-        userId,
-      },
-    })
+    const result = await withDatabaseRetry(
+      () => prisma.task.deleteMany({
+        where: {
+          id: { in: taskIds },
+          tenantId,
+          userId,
+        },
+      }),
+      'batchDeleteTasks-delete'
+    )
 
     // Invalidate caches
     await this.invalidateUserCaches(tenantId, userId)
