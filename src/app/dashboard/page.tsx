@@ -70,18 +70,19 @@ export default function Dashboard() {
         }),
       ])
 
+      // Handle different response formats consistently
       const allTasks = allTasksResponse.data || allTasksResponse.tasks || []
-      const todayTasks = todayTasksResponse.tasks || []
-      const overdueTasks = overdueTasksResponse.tasks || []
-      const upcomingTasks = upcomingTasksResponse.tasks || []
-      const noDueDateTasks = noDueDateTasksResponse.tasks || []
+      const todayTasks = todayTasksResponse.data || todayTasksResponse.tasks || []
+      const overdueTasks = overdueTasksResponse.data || overdueTasksResponse.tasks || []
+      const upcomingTasks = upcomingTasksResponse.data || upcomingTasksResponse.tasks || []
+      const noDueDateTasks = noDueDateTasksResponse.data || noDueDateTasksResponse.tasks || []
 
       setTaskCounts({
-        all: allTasks.length || 0,
-        today: todayTasks.length || 0,
-        overdue: overdueTasks.length || 0,
-        upcoming: upcomingTasks.length || 0,
-        noDueDate: noDueDateTasks.length || 0,
+        all: allTasksResponse.totalCount || allTasksResponse.total || allTasks.length || 0,
+        today: todayTasksResponse.totalCount || todayTasksResponse.total || todayTasks.length || 0,
+        overdue: overdueTasksResponse.totalCount || overdueTasksResponse.total || overdueTasks.length || 0,
+        upcoming: upcomingTasksResponse.totalCount || upcomingTasksResponse.total || upcomingTasks.length || 0,
+        noDueDate: noDueDateTasksResponse.totalCount || noDueDateTasksResponse.total || noDueDateTasks.length || 0,
       })
     } catch (err) {
       console.error("Failed to fetch task counts:", err)
