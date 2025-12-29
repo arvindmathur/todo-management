@@ -19,9 +19,15 @@ export interface UserPreferences {
   }
   taskSorting?: {
     primary: "priority" | "dueDate" | "title" | "created"
+    primaryOrder: "asc" | "desc"
     secondary: "priority" | "dueDate" | "title" | "created"
+    secondaryOrder: "asc" | "desc"
     tertiary: "priority" | "dueDate" | "title" | "created"
+    tertiaryOrder: "asc" | "desc"
   }
+  timezone?: string
+  dateFormat?: "MM/DD/YYYY" | "DD/MM/YYYY" | "YYYY-MM-DD"
+  timeFormat?: "12h" | "24h"
 }
 
 export interface PreferencesData {

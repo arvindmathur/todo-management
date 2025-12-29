@@ -1,22 +1,103 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { useUserPreferences, UserPreferences } from "@/hooks/useUserPreferences"
 import { GTDModeToggle } from "@/components/gtd/GTDModeToggle"
 import { GTDOnboarding } from "@/components/gtd/GTDOnboarding"
+import { getTimezoneOptions, detectTimezone } from "@/lib/timezone"
 
 export function PreferencesForm() {
+  const router = useRouter()
   const { preferencesData, updatePreferences, loading, error } = useUserPreferences()
   const [formData, setFormData] = useState<UserPreferences | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [updateMessage, setUpdateMessage] = useState<string | null>(null)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  
+  // Password change state
+  const [showPasswordChange, setShowPasswordChange] = useState(false)
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: ""
+  })
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
 
   useEffect(() => {
     if (preferencesData?.preferences) {
       setFormData(preferencesData.preferences)
+      setHasUnsavedChanges(false)
     }
   }, [preferencesData])
+
+  const handleSaveAll = async () => {
+    if (!formData || !hasUnsavedChanges) return
+
+    setIsUpdating(true)
+    try {
+      const result = await updatePreferences({
+        preferences: formData
+      })
+      
+      if (result.success) {
+        setHasUnsavedChanges(false)
+        setUpdateMessage("All preferences saved successfully")
+        setTimeout(() => setUpdateMessage(null), 3000)
+      }
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+
+  const handleCancel = () => {
+    if (hasUnsavedChanges) {
+      if (confirm("You have unsaved changes. Are you sure you want to cancel?")) {
+        setFormData(preferencesData?.preferences || null)
+        setHasUnsavedChanges(false)
+        router.push("/dashboard")
+      }
+    } else {
+      router.push("/dashboard")
+    }
+  }
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPasswordError(null)
+    
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      setPasswordError("Passwords don't match")
+      return
+    }
+
+    setIsChangingPassword(true)
+    try {
+      const response = await fetch("/api/user/change-password", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(passwordData),
+      })
+
+      if (response.ok) {
+        setPasswordData({ currentPassword: "", newPassword: "", confirmPassword: "" })
+        setShowPasswordChange(false)
+        setUpdateMessage("Password changed successfully")
+        setTimeout(() => setUpdateMessage(null), 3000)
+      } else {
+        const errorData = await response.json()
+        setPasswordError(errorData.error || "Failed to change password")
+      }
+    } catch (error) {
+      setPasswordError("Failed to change password")
+    } finally {
+      setIsChangingPassword(false)
+    }
+  }
 
   const handleGTDToggle = (enabled: boolean) => {
     if (enabled && !preferencesData?.preferences?.gtdOnboardingCompleted) {
@@ -39,20 +120,9 @@ export function PreferencesForm() {
   const handlePreferenceUpdate = async (updates: Partial<UserPreferences>) => {
     if (!formData) return
 
-    setIsUpdating(true)
-    try {
-      const result = await updatePreferences({
-        preferences: { ...formData, ...updates }
-      })
-      
-      if (result.success) {
-        setFormData(prev => prev ? { ...prev, ...updates } : null)
-        setUpdateMessage("Preferences updated successfully")
-        setTimeout(() => setUpdateMessage(null), 3000)
-      }
-    } finally {
-      setIsUpdating(false)
-    }
+    const newFormData = { ...formData, ...updates }
+    setFormData(newFormData)
+    setHasUnsavedChanges(true)
   }
 
   const handleNotificationUpdate = async (notificationUpdates: Partial<UserPreferences['notifications']>) => {
@@ -84,6 +154,35 @@ export function PreferencesForm() {
 
   return (
     <>
+      {/* Top Navigation */}
+      <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-200">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Preferences</h1>
+          <p className="mt-1 text-sm text-gray-600">
+            Customize your productivity workflow and application settings.
+          </p>
+        </div>
+        <div className="flex space-x-3">
+          <button
+            onClick={handleCancel}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveAll}
+            disabled={!hasUnsavedChanges || isUpdating}
+            className={`px-4 py-2 text-sm font-medium text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+              hasUnsavedChanges && !isUpdating
+                ? "bg-blue-600 hover:bg-blue-700"
+                : "bg-gray-400 cursor-not-allowed"
+            }`}
+          >
+            {isUpdating ? "Saving..." : "Save All"}
+          </button>
+        </div>
+      </div>
+
       <div className="space-y-8">
         {/* Success/Error Messages */}
         {updateMessage && (
@@ -115,6 +214,96 @@ export function PreferencesForm() {
             </div>
           </div>
         )}
+
+        {/* Account Security */}
+        <div className="bg-white shadow rounded-lg p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Account Security</h3>
+          
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-medium text-gray-900">Password</h4>
+                <p className="text-sm text-gray-500 mt-1">
+                  Change your account password for security.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowPasswordChange(!showPasswordChange)}
+                className="px-3 py-2 text-sm font-medium text-blue-600 hover:text-blue-800 border border-blue-300 rounded-md hover:bg-blue-50"
+              >
+                Change Password
+              </button>
+            </div>
+
+            {showPasswordChange && (
+              <form onSubmit={handlePasswordChange} className="mt-4 p-4 bg-gray-50 rounded-md space-y-4">
+                <div>
+                  <label htmlFor="current-password" className="block text-sm font-medium text-gray-700 mb-1">
+                    Current Password
+                  </label>
+                  <input
+                    type="password"
+                    id="current-password"
+                    value={passwordData.currentPassword}
+                    onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="new-password" className="block text-sm font-medium text-gray-700 mb-1">
+                    New Password
+                  </label>
+                  <input
+                    type="password"
+                    id="new-password"
+                    value={passwordData.newPassword}
+                    onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    minLength={8}
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-700 mb-1">
+                    Confirm New Password
+                  </label>
+                  <input
+                    type="password"
+                    id="confirm-password"
+                    value={passwordData.confirmPassword}
+                    onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    required
+                  />
+                </div>
+                {passwordError && (
+                  <div className="text-sm text-red-600">{passwordError}</div>
+                )}
+                <div className="flex space-x-3">
+                  <button
+                    type="submit"
+                    disabled={isChangingPassword}
+                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                  >
+                    {isChangingPassword ? "Changing..." : "Change Password"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPasswordChange(false)
+                      setPasswordData({ currentPassword: "", newPassword: "", confirmPassword: "" })
+                      setPasswordError(null)
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
 
         {/* GTD Mode Section */}
         <div className="bg-white shadow rounded-lg p-6">
@@ -314,81 +503,234 @@ export function PreferencesForm() {
           </div>
         </div>
 
+        {/* Regional Preferences */}
+        <div className="bg-white shadow rounded-lg p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Regional Preferences</h3>
+          
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="timezone" className="block text-sm font-medium text-gray-700 mb-2">
+                Timezone
+              </label>
+              <select
+                id="timezone"
+                value={formData.timezone || detectTimezone()}
+                onChange={(e) => handlePreferenceUpdate({ timezone: e.target.value })}
+                disabled={isUpdating}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+              >
+                {getTimezoneOptions().map((tz) => (
+                  <option key={tz.value} value={tz.value}>
+                    {tz.label}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-sm text-gray-500">
+                Your timezone affects how dates and times are displayed and calculated.
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="date-format" className="block text-sm font-medium text-gray-700 mb-2">
+                Date Format
+              </label>
+              <select
+                id="date-format"
+                value={formData.dateFormat || "MM/DD/YYYY"}
+                onChange={(e) => handlePreferenceUpdate({ 
+                  dateFormat: e.target.value as "MM/DD/YYYY" | "DD/MM/YYYY" | "YYYY-MM-DD" 
+                })}
+                disabled={isUpdating}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+              >
+                <option value="MM/DD/YYYY">MM/DD/YYYY (12/31/2024)</option>
+                <option value="DD/MM/YYYY">DD/MM/YYYY (31/12/2024)</option>
+                <option value="YYYY-MM-DD">YYYY-MM-DD (2024-12-31)</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="time-format" className="block text-sm font-medium text-gray-700 mb-2">
+                Time Format
+              </label>
+              <select
+                id="time-format"
+                value={formData.timeFormat || "12h"}
+                onChange={(e) => handlePreferenceUpdate({ 
+                  timeFormat: e.target.value as "12h" | "24h" 
+                })}
+                disabled={isUpdating}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+              >
+                <option value="12h">12-hour (2:30 PM)</option>
+                <option value="24h">24-hour (14:30)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         {/* Task Sorting */}
         <div className="bg-white shadow rounded-lg p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Task Sorting</h3>
           
           <div className="space-y-4">
-            <div>
-              <label htmlFor="primary-sort" className="block text-sm font-medium text-gray-700 mb-2">
-                Primary Sort
-              </label>
-              <select
-                id="primary-sort"
-                value={formData.taskSorting?.primary || "priority"}
-                onChange={(e) => handlePreferenceUpdate({ 
-                  taskSorting: {
-                    primary: e.target.value as "priority" | "dueDate" | "title" | "created",
-                    secondary: formData.taskSorting?.secondary || "dueDate",
-                    tertiary: formData.taskSorting?.tertiary || "title"
-                  }
-                })}
-                disabled={isUpdating}
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
-              >
-                <option value="priority">Priority</option>
-                <option value="dueDate">Due Date</option>
-                <option value="title">Title</option>
-                <option value="created">Created Date</option>
-              </select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="primary-sort" className="block text-sm font-medium text-gray-700 mb-2">
+                  Primary Sort
+                </label>
+                <select
+                  id="primary-sort"
+                  value={formData.taskSorting?.primary || "priority"}
+                  onChange={(e) => handlePreferenceUpdate({ 
+                    taskSorting: {
+                      primary: e.target.value as "priority" | "dueDate" | "title" | "created",
+                      primaryOrder: formData.taskSorting?.primaryOrder || "desc",
+                      secondary: formData.taskSorting?.secondary || "dueDate",
+                      secondaryOrder: formData.taskSorting?.secondaryOrder || "asc",
+                      tertiary: formData.taskSorting?.tertiary || "title",
+                      tertiaryOrder: formData.taskSorting?.tertiaryOrder || "asc"
+                    }
+                  })}
+                  disabled={isUpdating}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+                >
+                  <option value="priority">Priority</option>
+                  <option value="dueDate">Due Date</option>
+                  <option value="title">Title</option>
+                  <option value="created">Created Date</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="primary-order" className="block text-sm font-medium text-gray-700 mb-2">
+                  Order
+                </label>
+                <select
+                  id="primary-order"
+                  value={formData.taskSorting?.primaryOrder || "desc"}
+                  onChange={(e) => handlePreferenceUpdate({ 
+                    taskSorting: {
+                      primary: formData.taskSorting?.primary || "priority",
+                      primaryOrder: e.target.value as "asc" | "desc",
+                      secondary: formData.taskSorting?.secondary || "dueDate",
+                      secondaryOrder: formData.taskSorting?.secondaryOrder || "asc",
+                      tertiary: formData.taskSorting?.tertiary || "title",
+                      tertiaryOrder: formData.taskSorting?.tertiaryOrder || "asc"
+                    }
+                  })}
+                  disabled={isUpdating}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+                >
+                  <option value="asc">Ascending</option>
+                  <option value="desc">Descending</option>
+                </select>
+              </div>
             </div>
 
-            <div>
-              <label htmlFor="secondary-sort" className="block text-sm font-medium text-gray-700 mb-2">
-                Secondary Sort
-              </label>
-              <select
-                id="secondary-sort"
-                value={formData.taskSorting?.secondary || "dueDate"}
-                onChange={(e) => handlePreferenceUpdate({ 
-                  taskSorting: {
-                    primary: formData.taskSorting?.primary || "priority",
-                    secondary: e.target.value as "priority" | "dueDate" | "title" | "created",
-                    tertiary: formData.taskSorting?.tertiary || "title"
-                  }
-                })}
-                disabled={isUpdating}
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
-              >
-                <option value="priority">Priority</option>
-                <option value="dueDate">Due Date</option>
-                <option value="title">Title</option>
-                <option value="created">Created Date</option>
-              </select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="secondary-sort" className="block text-sm font-medium text-gray-700 mb-2">
+                  Secondary Sort
+                </label>
+                <select
+                  id="secondary-sort"
+                  value={formData.taskSorting?.secondary || "dueDate"}
+                  onChange={(e) => handlePreferenceUpdate({ 
+                    taskSorting: {
+                      primary: formData.taskSorting?.primary || "priority",
+                      primaryOrder: formData.taskSorting?.primaryOrder || "desc",
+                      secondary: e.target.value as "priority" | "dueDate" | "title" | "created",
+                      secondaryOrder: formData.taskSorting?.secondaryOrder || "asc",
+                      tertiary: formData.taskSorting?.tertiary || "title",
+                      tertiaryOrder: formData.taskSorting?.tertiaryOrder || "asc"
+                    }
+                  })}
+                  disabled={isUpdating}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+                >
+                  <option value="priority">Priority</option>
+                  <option value="dueDate">Due Date</option>
+                  <option value="title">Title</option>
+                  <option value="created">Created Date</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="secondary-order" className="block text-sm font-medium text-gray-700 mb-2">
+                  Order
+                </label>
+                <select
+                  id="secondary-order"
+                  value={formData.taskSorting?.secondaryOrder || "asc"}
+                  onChange={(e) => handlePreferenceUpdate({ 
+                    taskSorting: {
+                      primary: formData.taskSorting?.primary || "priority",
+                      primaryOrder: formData.taskSorting?.primaryOrder || "desc",
+                      secondary: formData.taskSorting?.secondary || "dueDate",
+                      secondaryOrder: e.target.value as "asc" | "desc",
+                      tertiary: formData.taskSorting?.tertiary || "title",
+                      tertiaryOrder: formData.taskSorting?.tertiaryOrder || "asc"
+                    }
+                  })}
+                  disabled={isUpdating}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+                >
+                  <option value="asc">Ascending</option>
+                  <option value="desc">Descending</option>
+                </select>
+              </div>
             </div>
 
-            <div>
-              <label htmlFor="tertiary-sort" className="block text-sm font-medium text-gray-700 mb-2">
-                Tertiary Sort
-              </label>
-              <select
-                id="tertiary-sort"
-                value={formData.taskSorting?.tertiary || "title"}
-                onChange={(e) => handlePreferenceUpdate({ 
-                  taskSorting: {
-                    primary: formData.taskSorting?.primary || "priority",
-                    secondary: formData.taskSorting?.secondary || "dueDate",
-                    tertiary: e.target.value as "priority" | "dueDate" | "title" | "created"
-                  }
-                })}
-                disabled={isUpdating}
-                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
-              >
-                <option value="priority">Priority</option>
-                <option value="dueDate">Due Date</option>
-                <option value="title">Title</option>
-                <option value="created">Created Date</option>
-              </select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="tertiary-sort" className="block text-sm font-medium text-gray-700 mb-2">
+                  Tertiary Sort
+                </label>
+                <select
+                  id="tertiary-sort"
+                  value={formData.taskSorting?.tertiary || "title"}
+                  onChange={(e) => handlePreferenceUpdate({ 
+                    taskSorting: {
+                      primary: formData.taskSorting?.primary || "priority",
+                      primaryOrder: formData.taskSorting?.primaryOrder || "desc",
+                      secondary: formData.taskSorting?.secondary || "dueDate",
+                      secondaryOrder: formData.taskSorting?.secondaryOrder || "asc",
+                      tertiary: e.target.value as "priority" | "dueDate" | "title" | "created",
+                      tertiaryOrder: formData.taskSorting?.tertiaryOrder || "asc"
+                    }
+                  })}
+                  disabled={isUpdating}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+                >
+                  <option value="priority">Priority</option>
+                  <option value="dueDate">Due Date</option>
+                  <option value="title">Title</option>
+                  <option value="created">Created Date</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="tertiary-order" className="block text-sm font-medium text-gray-700 mb-2">
+                  Order
+                </label>
+                <select
+                  id="tertiary-order"
+                  value={formData.taskSorting?.tertiaryOrder || "asc"}
+                  onChange={(e) => handlePreferenceUpdate({ 
+                    taskSorting: {
+                      primary: formData.taskSorting?.primary || "priority",
+                      primaryOrder: formData.taskSorting?.primaryOrder || "desc",
+                      secondary: formData.taskSorting?.secondary || "dueDate",
+                      secondaryOrder: formData.taskSorting?.secondaryOrder || "asc",
+                      tertiary: formData.taskSorting?.tertiary || "title",
+                      tertiaryOrder: e.target.value as "asc" | "desc"
+                    }
+                  })}
+                  disabled={isUpdating}
+                  className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+                >
+                  <option value="asc">Ascending</option>
+                  <option value="desc">Descending</option>
+                </select>
+              </div>
             </div>
 
             <p className="text-sm text-gray-500">
@@ -445,6 +787,32 @@ export function PreferencesForm() {
               />
             </label>
           </div>
+        </div>
+      </div>
+
+      {/* Bottom Navigation */}
+      <div className="flex justify-between items-center mt-8 pt-6 border-t border-gray-200">
+        <div className="text-sm text-gray-500">
+          {hasUnsavedChanges ? "You have unsaved changes" : "All changes saved"}
+        </div>
+        <div className="flex space-x-3">
+          <button
+            onClick={handleCancel}
+            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveAll}
+            disabled={!hasUnsavedChanges || isUpdating}
+            className={`px-4 py-2 text-sm font-medium text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+              hasUnsavedChanges && !isUpdating
+                ? "bg-blue-600 hover:bg-blue-700"
+                : "bg-gray-400 cursor-not-allowed"
+            }`}
+          >
+            {isUpdating ? "Saving..." : "Save All"}
+          </button>
         </div>
       </div>
 

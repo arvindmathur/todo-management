@@ -20,16 +20,32 @@ const preferencesSchema = z.object({
   }).optional(),
   gtdEnabled: z.boolean().optional(),
   gtdOnboardingCompleted: z.boolean().optional(),
-  // New task preferences
+  // Task preferences
   taskDefaults: z.object({
     priority: z.enum(["urgent", "high", "medium", "low"]).optional(),
     dueDate: z.enum(["today", "tomorrow", "none"]).optional(),
   }).optional(),
   taskSorting: z.object({
     primary: z.enum(["priority", "dueDate", "title", "created"]).optional(),
+    primaryOrder: z.enum(["asc", "desc"]).optional(),
     secondary: z.enum(["priority", "dueDate", "title", "created"]).optional(),
+    secondaryOrder: z.enum(["asc", "desc"]).optional(),
     tertiary: z.enum(["priority", "dueDate", "title", "created"]).optional(),
+    tertiaryOrder: z.enum(["asc", "desc"]).optional(),
   }).optional(),
+  // Regional preferences
+  timezone: z.string().optional(),
+  dateFormat: z.enum(["MM/DD/YYYY", "DD/MM/YYYY", "YYYY-MM-DD"]).optional(),
+  timeFormat: z.enum(["12h", "24h"]).optional(),
+})
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(8, "Password must be at least 8 characters"),
+  confirmPassword: z.string().min(1, "Please confirm your password"),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
 })
 
 // Get user preferences
@@ -138,6 +154,15 @@ export async function PUT(request: NextRequest) {
         ...updatedPreferences.taskSorting,
         ...validatedData.taskSorting
       }
+    }
+    if (validatedData.timezone !== undefined) {
+      updatedPreferences.timezone = validatedData.timezone
+    }
+    if (validatedData.dateFormat !== undefined) {
+      updatedPreferences.dateFormat = validatedData.dateFormat
+    }
+    if (validatedData.timeFormat !== undefined) {
+      updatedPreferences.timeFormat = validatedData.timeFormat
     }
 
     // Prepare update data

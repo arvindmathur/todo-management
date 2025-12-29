@@ -7,6 +7,8 @@ import { LoadingButton } from "@/components/feedback"
 import { useErrorHandling } from "@/hooks/useErrorHandling"
 import { useLoadingState } from "@/hooks/useLoadingState"
 import { useSuccessToast } from "@/components/feedback"
+import { useUserPreferences } from "@/hooks/useUserPreferences"
+import { formatDate, getDateInputValue, createDateInTimezone, isOverdue as isDateOverdue } from "@/lib/timezone"
 
 interface TaskItemProps {
   task: Task
@@ -39,13 +41,17 @@ export function TaskItem({
   onComplete,
   onReopen,
 }: TaskItemProps) {
+  const { preferencesData } = useUserPreferences()
+  const userTimezone = preferencesData?.preferences?.timezone
+  const dateFormat = preferencesData?.preferences?.dateFormat || "MM/DD/YYYY"
+  
   const [isEditing, setIsEditing] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [isEditingDueDate, setIsEditingDueDate] = useState(false)
   const [isEditingPriority, setIsEditingPriority] = useState(false)
   const [editingTitle, setEditingTitle] = useState(task.title)
   const [editingDueDate, setEditingDueDate] = useState(
-    task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : ""
+    task.dueDate ? getDateInputValue(new Date(task.dueDate), userTimezone) : ""
   )
   const [isSavingTitle, setIsSavingTitle] = useState(false)
   const [isSavingDueDate, setIsSavingDueDate] = useState(false)
@@ -91,8 +97,8 @@ export function TaskItem({
   // Reset editing values when task changes
   useEffect(() => {
     setEditingTitle(task.title)
-    setEditingDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "")
-  }, [task.title, task.dueDate])
+    setEditingDueDate(task.dueDate ? getDateInputValue(new Date(task.dueDate), userTimezone) : "")
+  }, [task.title, task.dueDate, userTimezone])
 
   const handleComplete = async () => {
     startLoading()
@@ -209,11 +215,11 @@ export function TaskItem({
             setIsEditingDueDate(false)
             showSuccess("Due Date Cleared", "Task due date has been cleared")
           } else {
-            setEditingDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "")
+            setEditingDueDate(task.dueDate ? getDateInputValue(new Date(task.dueDate), userTimezone) : "")
           }
         } catch (error) {
           await handleError(error, "Due date update")
-          setEditingDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "")
+          setEditingDueDate(task.dueDate ? getDateInputValue(new Date(task.dueDate), userTimezone) : "")
         } finally {
           setIsSavingDueDate(false)
         }
@@ -223,9 +229,8 @@ export function TaskItem({
       return
     }
 
-    // Create date in local timezone to avoid timezone conversion issues
-    const [year, month, day] = editingDueDate.split('-').map(Number)
-    const newDueDate = new Date(year, month - 1, day) // month is 0-indexed
+    // Create date in user's timezone to avoid timezone conversion issues
+    const newDueDate = createDateInTimezone(editingDueDate, userTimezone)
     const currentDueDate = task.dueDate ? new Date(task.dueDate) : null
     
     // Compare dates (ignore time)
@@ -245,11 +250,11 @@ export function TaskItem({
         setIsEditingDueDate(false)
         showSuccess("Due Date Updated", "Task due date has been updated")
       } else {
-        setEditingDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "")
+        setEditingDueDate(task.dueDate ? getDateInputValue(new Date(task.dueDate), userTimezone) : "")
       }
     } catch (error) {
       await handleError(error, "Due date update")
-      setEditingDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "")
+      setEditingDueDate(task.dueDate ? getDateInputValue(new Date(task.dueDate), userTimezone) : "")
     } finally {
       setIsSavingDueDate(false)
     }
@@ -261,7 +266,7 @@ export function TaskItem({
       handleDueDateSave()
     } else if (e.key === "Escape") {
       setIsEditingDueDate(false)
-      setEditingDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "")
+      setEditingDueDate(task.dueDate ? getDateInputValue(new Date(task.dueDate), userTimezone) : "")
     }
   }
 
@@ -273,12 +278,11 @@ export function TaskItem({
   const setQuickDate = async (days: number) => {
     const date = new Date()
     date.setDate(date.getDate() + days)
-    const dateString = date.toISOString().split('T')[0]
+    const dateString = getDateInputValue(date, userTimezone)
     setEditingDueDate(dateString)
     
-    // Create date in local timezone to avoid timezone conversion issues
-    const [year, month, day] = dateString.split('-').map(Number)
-    const newDueDate = new Date(year, month - 1, day) // month is 0-indexed
+    // Create date in user's timezone to avoid timezone conversion issues
+    const newDueDate = createDateInTimezone(dateString, userTimezone)
     
     setIsSavingDueDate(true)
     try {
@@ -360,7 +364,7 @@ export function TaskItem({
     const now = new Date()
     const dueDate = new Date(date)
     
-    // Compare dates in local timezone (user's perspective) - same logic as backend
+    // Use timezone-aware date comparison
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const taskDueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
     
@@ -373,20 +377,17 @@ export function TaskItem({
     if (diffDays < 0) return `${Math.abs(diffDays)} days overdue`
     if (diffDays <= 7) return `In ${diffDays} days`
     
-    return date.toLocaleDateString()
+    // Use user's preferred date format
+    return formatDate(date, { dateFormat, timezone: userTimezone })
   }
 
   const isOverdue = (() => {
     if (!task.dueDate || task.status === "completed") return false
     
-    const now = new Date()
     const dueDate = new Date(task.dueDate)
     
-    // Compare dates in local timezone (user's perspective) - same logic as backend
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const taskDueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
-    
-    return taskDueDate < today
+    // Use timezone-aware overdue check
+    return isDateOverdue(dueDate, userTimezone)
   })()
 
   if (isEditing) {

@@ -15,9 +15,15 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   },
   taskSorting: {
     primary: "priority",
+    primaryOrder: "desc",
     secondary: "dueDate", 
-    tertiary: "title"
-  }
+    secondaryOrder: "asc",
+    tertiary: "title",
+    tertiaryOrder: "asc"
+  },
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  dateFormat: "MM/DD/YYYY",
+  timeFormat: "12h"
 }
 
 export function getRetentionLabel(days: number): string {
