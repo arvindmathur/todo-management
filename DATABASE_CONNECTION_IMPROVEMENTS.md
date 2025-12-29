@@ -54,15 +54,15 @@ The application was experiencing critical database connection issues:
 const stats = getConnectionPoolStats();
 // Returns: { active: 2, max: 5, utilization: 40%, isConnected: true }
 
-// Enhanced Prisma configuration
+// Enhanced Prisma configuration (connection pool managed via DATABASE_URL)
 export const prisma = new PrismaClient({
-  __internal: {
-    engine: {
-      connection_limit: process.env.NODE_ENV === 'production' ? 5 : 10,
-      pool_timeout: 10,
-      schema_cache_size: 100,
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL, // Includes connection_limit=5&pool_timeout=10
     },
   },
+  log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+  errorFormat: 'minimal',
 });
 ```
 

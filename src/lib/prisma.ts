@@ -16,15 +16,6 @@ export const prisma = globalForPrisma.prisma ?? new PrismaClient({
   log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   // Error formatting
   errorFormat: 'minimal',
-  // Connection pool configuration for concurrent users
-  __internal: {
-    engine: {
-      // Connection pool settings for production
-      connection_limit: process.env.NODE_ENV === 'production' ? 5 : 10, // Reduced for serverless
-      pool_timeout: 10, // 10 seconds
-      schema_cache_size: 100,
-    },
-  },
 });
 
 // Ensure single instance in development
