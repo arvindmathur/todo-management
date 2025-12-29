@@ -65,7 +65,6 @@ export interface TaskFilters {
   search?: string
   limit?: number
   offset?: number
-  includeCompleted?: "none" | "1day" | "7days" | "30days"
 }
 
 export interface TasksResponse {

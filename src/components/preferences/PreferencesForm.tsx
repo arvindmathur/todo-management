@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { useUserPreferences, UserPreferences } from "@/hooks/useUserPreferences"
 import { GTDModeToggle } from "@/components/gtd/GTDModeToggle"
 import { GTDOnboarding } from "@/components/gtd/GTDOnboarding"
+import { CompletedTaskToggle } from "@/components/tasks/CompletedTaskToggle"
 import { getTimezoneOptions, detectTimezone } from "@/lib/timezone"
 
 export function PreferencesForm() {
@@ -30,6 +31,36 @@ export function PreferencesForm() {
     if (preferencesData?.preferences) {
       setFormData(preferencesData.preferences)
       setHasUnsavedChanges(false)
+    } else if (preferencesData && !preferencesData.preferences) {
+      // Set default preferences if none exist
+      const defaultPreferences: UserPreferences = {
+        completedTaskRetention: 30,
+        completedTaskVisibility: "none",
+        defaultView: "simple",
+        theme: "light",
+        notifications: {
+          email: false,
+          browser: false,
+          weeklyReview: false
+        },
+        taskDefaults: {
+          priority: "medium",
+          dueDate: "today"
+        },
+        taskSorting: {
+          primary: "priority",
+          primaryOrder: "desc",
+          secondary: "dueDate",
+          secondaryOrder: "asc",
+          tertiary: "title",
+          tertiaryOrder: "asc"
+        },
+        timezone: detectTimezone(), // Add detected timezone as default
+        dateFormat: "MM/DD/YYYY",
+        timeFormat: "12h"
+      }
+      setFormData(defaultPreferences)
+      setHasUnsavedChanges(true) // Mark as changed so user can save defaults
     }
   }, [preferencesData])
 
@@ -38,14 +69,15 @@ export function PreferencesForm() {
 
     setIsUpdating(true)
     try {
-      const result = await updatePreferences({
-        preferences: formData
-      })
+      const result = await updatePreferences(formData)
       
       if (result.success) {
         setHasUnsavedChanges(false)
         setUpdateMessage("All preferences saved successfully")
-        setTimeout(() => setUpdateMessage(null), 3000)
+        // Navigate back to dashboard after successful save
+        setTimeout(() => {
+          router.push("/dashboard")
+        }, 1000)
       }
     } finally {
       setIsUpdating(false)
@@ -365,27 +397,43 @@ export function PreferencesForm() {
         <div className="bg-white shadow rounded-lg p-6">
           <h3 className="text-lg font-medium text-gray-900 mb-4">Completed Tasks</h3>
           
-          <div>
-            <label htmlFor="retention" className="block text-sm font-medium text-gray-700 mb-2">
-              Keep completed tasks for
-            </label>
-            <select
-              id="retention"
-              value={formData.completedTaskRetention}
-              onChange={(e) => handlePreferenceUpdate({ 
-                completedTaskRetention: parseInt(e.target.value) as 30 | 90 | 365 | -1 
-              })}
-              disabled={isUpdating}
-              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
-            >
-              <option value={30}>30 days</option>
-              <option value={90}>90 days</option>
-              <option value={365}>1 year</option>
-              <option value={-1}>Keep indefinitely</option>
-            </select>
-            <p className="mt-2 text-sm text-gray-500">
-              Completed tasks older than this period will be automatically archived but remain accessible.
-            </p>
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-3">
+                Show completed tasks
+              </label>
+              <CompletedTaskToggle
+                completedTaskVisibility={formData.completedTaskVisibility || "none"}
+                onToggle={(value) => handlePreferenceUpdate({ completedTaskVisibility: value })}
+                disabled={isUpdating}
+              />
+              <p className="mt-2 text-sm text-gray-500">
+                Choose which completed tasks to show in your task lists. This setting persists across sessions.
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="retention" className="block text-sm font-medium text-gray-700 mb-2">
+                Keep completed tasks for
+              </label>
+              <select
+                id="retention"
+                value={formData.completedTaskRetention}
+                onChange={(e) => handlePreferenceUpdate({ 
+                  completedTaskRetention: parseInt(e.target.value) as 30 | 90 | 365 | -1 
+                })}
+                disabled={isUpdating}
+                className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+              >
+                <option value={30}>30 days</option>
+                <option value={90}>90 days</option>
+                <option value={365}>1 year</option>
+                <option value={-1}>Keep indefinitely</option>
+              </select>
+              <p className="mt-2 text-sm text-gray-500">
+                Completed tasks older than this period will be automatically archived but remain accessible.
+              </p>
+            </div>
           </div>
         </div>
 

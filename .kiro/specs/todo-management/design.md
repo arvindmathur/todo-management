@@ -88,7 +88,7 @@ interface User {
 }
 
 interface UserPreferences {
-  completedTaskRetention: 30 | 90 | 365 | -1; // -1 for indefinite
+  completedTaskVisibility: 'none' | '1day' | '7days' | '30days'; // Completed task toggle options
   defaultView: 'simple' | 'gtd';
   theme: 'light' | 'dark' | 'system';
   notifications: NotificationSettings;
@@ -103,6 +103,7 @@ interface Task {
   status: TaskStatus;
   priority: Priority;
   dueDate?: Date;
+  originalDueDate?: Date;  // Preserves initial due date for historical tracking
   completedAt?: Date;
   projectId?: string;
   contextId?: string;
@@ -258,6 +259,7 @@ CREATE TABLE tasks (
   status VARCHAR(20) DEFAULT 'active',
   priority VARCHAR(20) DEFAULT 'medium',
   due_date TIMESTAMP,
+  original_due_date TIMESTAMP,  -- Preserves initial due date for historical tracking
   completed_at TIMESTAMP,
   project_id UUID REFERENCES projects(id),
   context_id UUID REFERENCES contexts(id),
@@ -505,17 +507,57 @@ Now I need to use the prework tool to analyze the acceptance criteria before wri
 *For any* request to delete completed tasks, the system should provide appropriate options based on task age and user preferences.
 **Validates: Requirements 10.4**
 
-### Property 32: Authentication and Validation
+### Property 30: Enhanced Completed Task Management
+*For any* completed task, it should be properly moved to the completed section with completion date recorded and remain immutable to prevent uncompleting.
+**Validates: Requirements 10.1, 10.4**
+
+### Property 31: Completed Task Visibility Toggle
+*For any* completed task visibility selection (1 day, 7 days, 30 days), the system should filter both task lists and tab counts to show only completed tasks within the selected timeframe.
+**Validates: Requirements 10.3**
+
+### Property 32: Completed Task Immutability Display
+*For any* completed task displayed in the interface, it should have disabled interaction controls and visual indicators showing its read-only status.
+**Validates: Requirements 10.5, 12.5**
+
+### Property 33: Original Due Date Preservation
+*For any* task with a due date that gets modified, the system should preserve the original due date separately from the current due date.
+**Validates: Requirements 10.6**
+
+### Property 34: Complete Date Field Tracking
+*For any* task, the system should maintain all required date fields: date created, original due date, current due date, and date completed (when applicable).
+**Validates: Requirements 10.7**
+
+### Property 35: Inline Editing Activation
+*For any* task field (title, due date, priority), clicking on it should enable inline editing with immediate visual feedback.
+**Validates: Requirements 12.1**
+
+### Property 36: Date Quick Selector Functionality
+*For any* task in edit mode, using date quick selectors (Today, Tomorrow, Clear) should update the date without losing focus or exiting edit mode.
+**Validates: Requirements 12.2**
+
+### Property 37: Tab Count Consistency
+*For any* task filtering view, the displayed tab counts should accurately match the actual number of tasks in each filtered category using consistent timezone calculations.
+**Validates: Requirements 12.4**
+
+### Property 38: Auto-save Task Changes
+*For any* task editing operation, changes should be automatically saved immediately upon completion of the editing action.
+**Validates: Requirements 12.6**
+
+### Property 39: Save Operation Visual Feedback
+*For any* save or synchronization operation, the system should provide clear visual feedback indicating the operation status.
+**Validates: Requirements 12.7**
+
+### Property 40: Authentication and Validation
 *For any* user registration or login attempt, the system should properly validate credentials and enforce security requirements.
-**Validates: Requirements 11.1, 11.2**
+**Validates: Requirements 13.1, 13.2**
 
-### Property 33: Session Management
+### Property 41: Session Management
 *For any* user session, the system should properly handle session expiration and require re-authentication when appropriate.
-**Validates: Requirements 11.3**
+**Validates: Requirements 13.3**
 
-### Property 34: Password Reset Security
+### Property 42: Password Reset Security
 *For any* password reset request, the system should send a secure reset link to the registered email address.
-**Validates: Requirements 11.4**
+**Validates: Requirements 13.4**
 
 ## Error Handling
 

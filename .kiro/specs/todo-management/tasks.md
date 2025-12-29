@@ -60,7 +60,7 @@ This implementation plan breaks down the todo management SaaS application into d
     - Add today's tasks and overdue task views
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-  - [ ] 4.3 Write property tests for core task operations
+  - [x] 4.3 Write property tests for core task operations
 
     - **Property 1: Task Creation Persistence**
     - **Property 2: Task Completion State Transition**
@@ -208,19 +208,63 @@ This implementation plan breaks down the todo management SaaS application into d
     - **Property 20: Review Reminder Timing**
     - **Validates: Requirements 6.1, 6.2, 6.3, 6.4, 6.5**
 
-- [ ] 12. Completed Task Management
-  - [x] 12.1 Implement completed task handling
-    - Create completed task views with date organization
-    - Implement automatic archiving based on age
-    - Add completed task deletion with user preferences
-    - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5_
+- [x] 12. Enhanced Completed Task Management
+  - [x] 12.1 Implement enhanced completed task handling with toggle options
+    - Create completed task toggle component with 1 day, 7 days, 30 days options
+    - Implement immutable completed task state (prevent uncompleting)
+    - Add originalDueDate field to preserve historical due date information
+    - Update API filtering to handle completed task visibility preferences
+    - Enhance UI to show disabled controls for completed tasks
+    - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7_
 
-  - [ ]* 12.2 Write property tests for completed task management
-    - **Property 30: Completed Task Management**
-    - **Property 31: Completed Task Deletion Options**
-    - **Validates: Requirements 10.2, 10.3, 10.4, 10.5**
+  - [ ]* 12.2 Write property tests for enhanced completed task management
+    - **Property 30: Enhanced Completed Task Management**
+    - **Property 31: Completed Task Visibility Toggle**
+    - **Property 32: Completed Task Immutability Display**
+    - **Property 33: Original Due Date Preservation**
+    - **Property 34: Complete Date Field Tracking**
+    - **Validates: Requirements 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7**
 
-- [ ] 13. Real-time Synchronization
+- [x] 12.5. Enhanced UI/UX Improvements
+  - [x] 12.5.1 Fix date quick selectors functionality
+    - Resolve focus loss issues with Today, Tomorrow, Clear buttons
+    - Implement proper event handling to prevent edit mode exit
+    - Ensure date updates work reliably without UI glitches
+    - _Requirements: 12.2_
+
+  - [x] 12.5.2 Improve priority dropdown ordering
+    - Reverse priority order to show Urgent at top
+    - Align with logical hierarchy and user expectations
+    - _Requirements: 12.3_
+
+  - [x] 12.5.3 Fix tab count consistency issues
+    - Synchronize timezone calculations between tab counts and task lists
+    - Ensure overdue/today counts match displayed tasks
+    - Update API endpoints to use consistent date calculations
+    - _Requirements: 12.4_
+
+  - [x] 12.5.4 Implement auto-save functionality
+    - Add immediate auto-save for all task field changes
+    - Provide visual feedback during save operations
+    - Ensure reliable data persistence without user intervention
+    - _Requirements: 12.6, 12.7_
+
+  - [ ]* 12.5.5 Write property tests for UI/UX improvements
+    - **Property 35: Inline Editing Activation**
+    - **Property 36: Date Quick Selector Functionality**
+    - **Property 37: Tab Count Consistency**
+    - **Property 38: Auto-save Task Changes**
+    - **Property 39: Save Operation Visual Feedback**
+    - **Validates: Requirements 12.1, 12.2, 12.4, 12.6, 12.7**
+
+- [x] 13. Real-time Synchronization
+  - [x] 13.1 Implement WebSocket-based real-time sync
+    - Set up WebSocket connections for live updates
+    - Implement change broadcasting and conflict resolution
+    - Add offline support with local storage fallback
+    - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5_
+
+- [x] 13. Real-time Synchronization
   - [x] 13.1 Implement WebSocket-based real-time sync
     - Set up WebSocket connections for live updates
     - Implement change broadcasting and conflict resolution
@@ -240,7 +284,7 @@ This implementation plan breaks down the todo management SaaS application into d
     - Create audit log system with user attribution
     - Add security monitoring and rate limiting
     - Implement data encryption and security headers
-    - _Requirements: 9.4, 11.5_
+    - _Requirements: 9.4, 13.5_
 
   - [ ]* 14.2 Write property tests for audit logging
     - **Property 29: Audit Logging**

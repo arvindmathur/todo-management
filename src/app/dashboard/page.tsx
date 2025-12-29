@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import { useTasks } from "@/hooks/useTasks"
 import { useTaskViews } from "@/hooks/useTaskViews"
+import { useUserPreferences } from "@/hooks/useUserPreferences"
 import { TaskList } from "@/components/tasks/TaskList"
 import { TaskViewTabs } from "@/components/tasks/TaskViewTabs"
 import { CollapsibleFilters } from "@/components/tasks/CollapsibleFilters"
@@ -14,6 +15,7 @@ import VersionDisplay from "@/components/ui/VersionDisplay"
 
 export default function Dashboard() {
   const { data: session, status } = useSession()
+  const { preferencesData } = useUserPreferences()
   const router = useRouter()
   const [activeView, setActiveView] = useState("focus")
   const [showAdditionalFilters, setShowAdditionalFilters] = useState(false)
@@ -47,25 +49,28 @@ export default function Dashboard() {
     if (status !== "authenticated") return
     
     try {
+      // Get user preference for completed task visibility
+      const completedTaskVisibility = preferencesData?.preferences?.completedTaskVisibility || "none"
+      
       // Make direct API calls for all counts to ensure independence from current filters
       const [allTasksResponse, todayTasksResponse, overdueTasksResponse, upcomingTasksResponse, noDueDateTasksResponse] = await Promise.all([
-        fetch('/api/tasks?status=active').then(res => {
+        fetch(`/api/tasks?status=active&includeCompleted=${completedTaskVisibility}`).then(res => {
           if (!res.ok) throw new Error('Failed to fetch all tasks')
           return res.json()
         }),
-        fetch('/api/tasks/today').then(res => {
+        fetch(`/api/tasks/today?includeCompleted=${completedTaskVisibility}`).then(res => {
           if (!res.ok) throw new Error('Failed to fetch today tasks')
           return res.json()
         }),
-        fetch('/api/tasks/overdue').then(res => {
+        fetch(`/api/tasks/overdue?includeCompleted=${completedTaskVisibility}`).then(res => {
           if (!res.ok) throw new Error('Failed to fetch overdue tasks')
           return res.json()
         }),
-        fetch('/api/tasks/upcoming').then(res => {
+        fetch(`/api/tasks/upcoming?includeCompleted=${completedTaskVisibility}`).then(res => {
           if (!res.ok) throw new Error('Failed to fetch upcoming tasks')
           return res.json()
         }),
-        fetch('/api/tasks/no-due-date').then(res => {
+        fetch(`/api/tasks/no-due-date?includeCompleted=${completedTaskVisibility}`).then(res => {
           if (!res.ok) throw new Error('Failed to fetch no due date tasks')
           return res.json()
         }),
@@ -99,7 +104,7 @@ export default function Dashboard() {
         focus: 0,
       })
     }
-  }, [status])
+  }, [status, preferencesData?.preferences?.completedTaskVisibility])
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -113,6 +118,13 @@ export default function Dashboard() {
       refreshTaskCounts()
     }
   }, [status, refreshTaskCounts])
+
+  // Refresh task counts when completed task visibility preference changes
+  useEffect(() => {
+    if (status === "authenticated" && preferencesData?.preferences?.completedTaskVisibility !== undefined) {
+      refreshTaskCounts()
+    }
+  }, [preferencesData?.preferences?.completedTaskVisibility, status, refreshTaskCounts])
 
   const handleTaskCreate = async (taskData: any) => {
     const result = await createTask(taskData)

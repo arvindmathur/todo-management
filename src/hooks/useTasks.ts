@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react"
 import { useSession } from "next-auth/react"
 import { Task, TaskFilters, CreateTaskRequest, UpdateTaskRequest } from "@/types/task"
+import { useUserPreferences } from "@/hooks/useUserPreferences"
 
 // Debounce hook for search
 function useDebounce<T>(value: T, delay: number): T {
@@ -23,6 +24,7 @@ function useDebounce<T>(value: T, delay: number): T {
 
 export function useTasks(initialFilters: TaskFilters = {}) {
   const { data: session, status } = useSession()
+  const { preferencesData } = useUserPreferences()
   const [tasks, setTasks] = useState<Task[]>([]) // Initialize with empty array
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -38,8 +40,12 @@ export function useTasks(initialFilters: TaskFilters = {}) {
       setLoading(true)
       const searchParams = new URLSearchParams()
       
+      // Add user preference for completed task visibility
+      const completedTaskVisibility = preferencesData?.preferences?.completedTaskVisibility || "none"
+      searchParams.append("includeCompleted", completedTaskVisibility)
+      
       Object.entries(currentFilters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
+        if (value !== undefined && value !== null && value !== "" && key !== "includeCompleted") {
           searchParams.append(key, value.toString())
         }
       })
@@ -62,7 +68,7 @@ export function useTasks(initialFilters: TaskFilters = {}) {
     } finally {
       setLoading(false)
     }
-  }, [status, debouncedFilters])
+  }, [status, debouncedFilters, preferencesData?.preferences?.completedTaskVisibility])
 
   const createTask = async (taskData: CreateTaskRequest) => {
     try {
@@ -207,6 +213,13 @@ export function useTasks(initialFilters: TaskFilters = {}) {
   useEffect(() => {
     fetchTasks()
   }, [fetchTasks])
+
+  // Refetch tasks when completed task visibility preference changes
+  useEffect(() => {
+    if (status === "authenticated" && preferencesData?.preferences?.completedTaskVisibility !== undefined) {
+      fetchTasks()
+    }
+  }, [preferencesData?.preferences?.completedTaskVisibility, status, fetchTasks])
 
   return {
     tasks,

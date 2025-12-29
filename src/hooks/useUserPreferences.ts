@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react"
 
 export interface UserPreferences {
   completedTaskRetention: 30 | 90 | 365 | -1
+  completedTaskVisibility: "none" | "1day" | "7days" | "30days"
   defaultView: "simple" | "gtd"
   theme: "light" | "dark" | "system"
   notifications: {
@@ -62,7 +63,7 @@ export function useUserPreferences() {
     }
   }, [status])
 
-  const updatePreferences = async (updates: Partial<PreferencesData>) => {
+  const updatePreferences = async (updates: Partial<UserPreferences & { gtdEnabled?: boolean }>) => {
     try {
       const response = await fetch("/api/user/preferences", {
         method: "PUT",
@@ -74,7 +75,11 @@ export function useUserPreferences() {
 
       if (response.ok) {
         const data = await response.json()
-        setPreferencesData(data)
+        // Update the local state with the returned data
+        setPreferencesData({
+          gtdEnabled: data.gtdEnabled,
+          preferences: data.preferences
+        })
         setError(null)
         return { success: true, data }
       } else {

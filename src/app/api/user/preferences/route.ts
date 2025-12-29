@@ -11,6 +11,7 @@ const preferencesSchema = z.object({
     z.literal(365),
     z.literal(-1)
   ]).optional(),
+  completedTaskVisibility: z.enum(["none", "1day", "7days", "30days"]).optional(),
   defaultView: z.enum(["simple", "gtd"]).optional(),
   theme: z.enum(["light", "dark", "system"]).optional(),
   notifications: z.object({
@@ -76,9 +77,12 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Ensure preferences is always an object, even if null in database
+    const preferences = user.preferences || {}
+
     return NextResponse.json({
       gtdEnabled: user.gtdEnabled,
-      preferences: user.preferences,
+      preferences: preferences,
     })
   } catch (error) {
     console.error("Get preferences error:", error)
@@ -120,13 +124,16 @@ export async function PUT(request: NextRequest) {
       )
     }
 
-    // Merge preferences
-    const currentPreferences = currentUser.preferences as any || {}
+    // Merge preferences - handle case where preferences might be null or empty
+    const currentPreferences = (currentUser.preferences as any) || {}
     const updatedPreferences = { ...currentPreferences }
 
     // Update individual preference fields
     if (validatedData.completedTaskRetention !== undefined) {
       updatedPreferences.completedTaskRetention = validatedData.completedTaskRetention
+    }
+    if (validatedData.completedTaskVisibility !== undefined) {
+      updatedPreferences.completedTaskVisibility = validatedData.completedTaskVisibility
     }
     if (validatedData.defaultView !== undefined) {
       updatedPreferences.defaultView = validatedData.defaultView

@@ -133,13 +133,29 @@ A web-based SaaS application for to-do list management that serves both casual u
 
 #### Acceptance Criteria
 
-1. WHEN a user marks a task as complete, THE System SHALL move it to a separate completed tasks section while preserving all task data
-2. WHEN a user views completed tasks, THE System SHALL display them organized by completion date with search and filter capabilities
-3. WHEN completed tasks are older than 90 days, THE System SHALL automatically archive them but keep them accessible through an archive view
-4. WHEN a user requests to permanently delete completed tasks, THE System SHALL provide options to delete tasks older than a specified timeframe
-5. THE System SHALL allow users to configure their completed task retention preferences (30, 90, 365 days, or indefinite)
+1. WHEN a user marks a task as complete, THE System SHALL move it to a separate completed tasks section while preserving all task data and recording the completion date
+2. WHEN a user views completed tasks, THE System SHALL provide toggle options to show completed tasks from the last 1 day, 7 days, or 30 days
+3. WHEN a user selects a completed task visibility option, THE System SHALL update both task lists and tab counts to include/exclude completed tasks based on the selection
+4. WHEN a task is completed, THE System SHALL make it immutable and prevent it from being marked as incomplete again
+5. WHEN completed tasks are displayed, THE System SHALL show them with disabled interaction controls to indicate their immutable status
+6. THE System SHALL track the original due date separately from the current due date to preserve historical information
+7. THE System SHALL maintain the following date fields for each task: date created, original due date, current due date, and date completed
 
-### Requirement 11: User Authentication and Security
+### Requirement 12: Enhanced User Interface and Interactions
+
+**User Story:** As a user, I want intuitive and responsive task interactions, so that I can efficiently manage my tasks with minimal friction.
+
+#### Acceptance Criteria
+
+1. WHEN a user clicks on task fields (title, due date, priority), THE System SHALL enable inline editing with immediate visual feedback
+2. WHEN a user uses date quick selectors (Today, Tomorrow, Clear), THE System SHALL update the task date without losing focus or exiting edit mode
+3. WHEN a user changes task priority, THE System SHALL display priority options in logical order with urgent at the top
+4. WHEN the system displays tab counts, THE System SHALL ensure consistency between displayed counts and actual task lists using synchronized timezone calculations
+5. WHEN a user interacts with completed tasks, THE System SHALL provide visual indicators that these tasks are read-only and cannot be modified
+6. THE System SHALL auto-save all task changes immediately upon completion of editing actions
+7. THE System SHALL provide clear visual feedback during save operations and data synchronization
+
+### Requirement 13: User Authentication and Security
 
 **User Story:** As a user, I want secure access to my personal productivity data, so that my information remains private and accessible only to me.
 

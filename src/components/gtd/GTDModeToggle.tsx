@@ -29,17 +29,7 @@ export function GTDModeToggle({
         gtdEnabled: newGTDState,
         // When enabling GTD, also set default view to GTD
         ...(newGTDState && { 
-          preferences: { 
-            defaultView: "gtd" as const,
-            completedTaskRetention: preferencesData?.preferences?.completedTaskRetention || 90,
-            theme: preferencesData?.preferences?.theme || "system",
-            notifications: preferencesData?.preferences?.notifications || {
-              email: true,
-              browser: true,
-              weeklyReview: true
-            },
-            gtdOnboardingCompleted: preferencesData?.preferences?.gtdOnboardingCompleted || false
-          } 
+          defaultView: "gtd" as const
         })
       })
       

@@ -2,6 +2,7 @@ import { UserPreferences } from "@/hooks/useUserPreferences"
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
   completedTaskRetention: 90,
+  completedTaskVisibility: "none",
   defaultView: "simple",
   theme: "system",
   notifications: {

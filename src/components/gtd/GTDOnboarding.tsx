@@ -156,18 +156,7 @@ export function GTDOnboarding({ onComplete, onSkip }: GTDOnboardingProps) {
     try {
       // Mark onboarding as completed in preferences
       await updatePreferences({
-        preferences: {
-          ...preferencesData?.preferences,
-          completedTaskRetention: preferencesData?.preferences?.completedTaskRetention || 90,
-          defaultView: preferencesData?.preferences?.defaultView || "gtd",
-          theme: preferencesData?.preferences?.theme || "system",
-          notifications: preferencesData?.preferences?.notifications || {
-            email: true,
-            browser: true,
-            weeklyReview: true
-          },
-          gtdOnboardingCompleted: true
-        }
+        gtdOnboardingCompleted: true
       })
       
       if (onComplete) {
@@ -183,18 +172,7 @@ export function GTDOnboarding({ onComplete, onSkip }: GTDOnboardingProps) {
     try {
       // Mark onboarding as completed (skipped) in preferences
       await updatePreferences({
-        preferences: {
-          ...preferencesData?.preferences,
-          completedTaskRetention: preferencesData?.preferences?.completedTaskRetention || 90,
-          defaultView: preferencesData?.preferences?.defaultView || "simple",
-          theme: preferencesData?.preferences?.theme || "system",
-          notifications: preferencesData?.preferences?.notifications || {
-            email: true,
-            browser: true,
-            weeklyReview: true
-          },
-          gtdOnboardingCompleted: true
-        }
+        gtdOnboardingCompleted: true
       })
       
       if (onSkip) {
