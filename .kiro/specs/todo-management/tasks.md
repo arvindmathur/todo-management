@@ -102,13 +102,13 @@ This implementation plan breaks down the todo management SaaS application into d
     - Support mobile long-press for touch devices
     - _Requirements: 1.3 (task editing), UX improvement_
 
-  - [ ] 6.5.2 Implement click-to-edit for due date
+  - [x] 6.5.2 Implement click-to-edit for due date
     - Make due date clickable to show date picker
     - Support quick date selection (today, tomorrow, next week)
     - Auto-save changes immediately
     - _Requirements: 2.1 (due date assignment), UX improvement_
 
-  - [ ] 6.5.3 Implement click-to-edit for priority
+  - [x] 6.5.3 Implement click-to-edit for priority
     - Make priority badge clickable to cycle through priorities
     - Show visual feedback during priority changes
     - Auto-save priority changes

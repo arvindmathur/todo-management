@@ -16,6 +16,7 @@ export const VERSION_HISTORY = {
   '2.03.0': 'Enhanced database connection stability and error handling',
   '2.04.0': 'Fix overdue date logic - tasks due today no longer marked as overdue',
   '2.05.0': 'Excel-like editing: Click-to-edit task titles with mobile long-press support',
+  '2.06.0': 'Complete Excel-like editing: Click-to-edit due dates and priority cycling',
 };
 
 export function getVersionInfo() {

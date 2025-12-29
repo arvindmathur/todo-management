@@ -30,6 +30,8 @@ const priorityLabels = {
   urgent: "Urgent",
 }
 
+const priorityOrder: TaskPriority[] = ["low", "medium", "high", "urgent"]
+
 export function TaskItem({
   task,
   onUpdate,
@@ -39,10 +41,17 @@ export function TaskItem({
 }: TaskItemProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
+  const [isEditingDueDate, setIsEditingDueDate] = useState(false)
   const [editingTitle, setEditingTitle] = useState(task.title)
+  const [editingDueDate, setEditingDueDate] = useState(
+    task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : ""
+  )
   const [isSavingTitle, setIsSavingTitle] = useState(false)
+  const [isSavingDueDate, setIsSavingDueDate] = useState(false)
+  const [isSavingPriority, setIsSavingPriority] = useState(false)
   
   const titleInputRef = useRef<HTMLInputElement>(null)
+  const dueDateInputRef = useRef<HTMLInputElement>(null)
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null)
   
   const { handleError } = useErrorHandling()
@@ -57,10 +66,17 @@ export function TaskItem({
     }
   }, [isEditingTitle])
 
-  // Reset editing title when task title changes
+  useEffect(() => {
+    if (isEditingDueDate && dueDateInputRef.current) {
+      dueDateInputRef.current.focus()
+    }
+  }, [isEditingDueDate])
+
+  // Reset editing values when task changes
   useEffect(() => {
     setEditingTitle(task.title)
-  }, [task.title])
+    setEditingDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "")
+  }, [task.title, task.dueDate])
 
   const handleComplete = async () => {
     startLoading()
@@ -154,6 +170,117 @@ export function TaskItem({
 
   const handleTitleBlur = () => {
     handleTitleSave()
+  }
+
+  // Handle due date editing
+  const handleDueDateClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!isEditingDueDate && !isLoading && task.status !== "completed") {
+      setIsEditingDueDate(true)
+    }
+  }
+
+  const handleDueDateSave = async () => {
+    const newDueDate = editingDueDate ? new Date(editingDueDate + 'T00:00:00') : null
+    const currentDueDate = task.dueDate ? new Date(task.dueDate) : null
+    
+    // Compare dates (ignore time)
+    const isSameDate = newDueDate && currentDueDate 
+      ? newDueDate.toDateString() === currentDueDate.toDateString()
+      : newDueDate === currentDueDate
+
+    if (isSameDate) {
+      setIsEditingDueDate(false)
+      return
+    }
+
+    setIsSavingDueDate(true)
+    try {
+      const result = await onUpdate(task.id, { dueDate: newDueDate })
+      if (result.success) {
+        setIsEditingDueDate(false)
+        showSuccess("Due Date Updated", "Task due date has been updated")
+      } else {
+        setEditingDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "")
+      }
+    } catch (error) {
+      await handleError(error, "Due date update")
+      setEditingDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "")
+    } finally {
+      setIsSavingDueDate(false)
+    }
+  }
+
+  const handleDueDateKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      handleDueDateSave()
+    } else if (e.key === "Escape") {
+      setIsEditingDueDate(false)
+      setEditingDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "")
+    }
+  }
+
+  const handleDueDateBlur = () => {
+    handleDueDateSave()
+  }
+
+  // Quick date setters
+  const setQuickDate = async (days: number) => {
+    const date = new Date()
+    date.setDate(date.getDate() + days)
+    const dateString = date.toISOString().split('T')[0]
+    setEditingDueDate(dateString)
+    
+    setIsSavingDueDate(true)
+    try {
+      const result = await onUpdate(task.id, { dueDate: new Date(dateString + 'T00:00:00') })
+      if (result.success) {
+        setIsEditingDueDate(false)
+        showSuccess("Due Date Updated", "Task due date has been updated")
+      }
+    } catch (error) {
+      await handleError(error, "Due date update")
+    } finally {
+      setIsSavingDueDate(false)
+    }
+  }
+
+  const clearDueDate = async () => {
+    setIsSavingDueDate(true)
+    try {
+      const result = await onUpdate(task.id, { dueDate: null })
+      if (result.success) {
+        setIsEditingDueDate(false)
+        showSuccess("Due Date Cleared", "Task due date has been cleared")
+      }
+    } catch (error) {
+      await handleError(error, "Due date update")
+    } finally {
+      setIsSavingDueDate(false)
+    }
+  }
+
+  // Handle priority editing
+  const handlePriorityClick = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (isLoading || task.status === "completed" || isSavingPriority) return
+
+    const currentIndex = priorityOrder.indexOf(task.priority)
+    const nextIndex = (currentIndex + 1) % priorityOrder.length
+    const newPriority = priorityOrder[nextIndex]
+
+    setIsSavingPriority(true)
+    try {
+      const result = await onUpdate(task.id, { priority: newPriority })
+      if (result.success) {
+        showSuccess("Priority Updated", `Priority changed to ${priorityLabels[newPriority]}`)
+      }
+    } catch (error) {
+      await handleError(error, "Priority update")
+    } finally {
+      setIsSavingPriority(false)
+    }
   }
 
   // Handle long press for mobile
@@ -330,23 +457,100 @@ export function TaskItem({
 
           {/* Task metadata */}
           <div className="mt-2 flex items-center space-x-4 text-xs text-gray-500">
-            {/* Priority */}
-            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-              priorityColors[task.priority]
-            }`}>
+            {/* Clickable Priority */}
+            <span 
+              className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium cursor-pointer hover:shadow-md transition-all ${
+                priorityColors[task.priority]
+              } ${
+                task.status !== "completed" ? "hover:scale-105" : "cursor-default"
+              } ${
+                isSavingPriority ? "opacity-50" : ""
+              }`}
+              onClick={handlePriorityClick}
+              title={task.status !== "completed" ? "Click to cycle priority" : ""}
+            >
+              {isSavingPriority ? (
+                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current mr-1"></div>
+              ) : null}
               {priorityLabels[task.priority]}
             </span>
 
-            {/* Due date */}
-            {task.dueDate && (
-              <span className={`flex items-center ${
-                isOverdue ? "text-red-600 font-medium" : ""
-              }`}>
-                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                {formatDueDate(new Date(task.dueDate))}
-              </span>
+            {/* Clickable Due date */}
+            {isEditingDueDate ? (
+              <div className="flex items-center space-x-2">
+                <div className="relative">
+                  <input
+                    ref={dueDateInputRef}
+                    type="date"
+                    value={editingDueDate}
+                    onChange={(e) => setEditingDueDate(e.target.value)}
+                    onKeyDown={handleDueDateKeyDown}
+                    onBlur={handleDueDateBlur}
+                    disabled={isSavingDueDate}
+                    className={`text-xs border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      isSavingDueDate ? "opacity-50 cursor-not-allowed" : ""
+                    }`}
+                  />
+                  {isSavingDueDate && (
+                    <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex space-x-1">
+                  <button
+                    onClick={() => setQuickDate(0)}
+                    disabled={isSavingDueDate}
+                    className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors"
+                  >
+                    Today
+                  </button>
+                  <button
+                    onClick={() => setQuickDate(1)}
+                    disabled={isSavingDueDate}
+                    className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200 transition-colors"
+                  >
+                    Tomorrow
+                  </button>
+                  <button
+                    onClick={clearDueDate}
+                    disabled={isSavingDueDate}
+                    className="px-2 py-1 text-xs bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition-colors"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            ) : (
+              task.dueDate ? (
+                <span 
+                  className={`flex items-center cursor-pointer hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors ${
+                    isOverdue ? "text-red-600 font-medium" : ""
+                  } ${
+                    task.status !== "completed" ? "hover:text-blue-600 hover:shadow-sm" : ""
+                  }`}
+                  onClick={handleDueDateClick}
+                  title={task.status !== "completed" ? "Click to edit due date" : ""}
+                >
+                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  {formatDueDate(new Date(task.dueDate))}
+                </span>
+              ) : (
+                task.status !== "completed" && (
+                  <span 
+                    className="flex items-center cursor-pointer hover:bg-gray-50 rounded px-2 py-1 -mx-2 -my-1 transition-colors text-gray-400 hover:text-blue-600 hover:shadow-sm"
+                    onClick={handleDueDateClick}
+                    title="Click to set due date"
+                  >
+                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Set due date
+                  </span>
+                )
+              )
             )}
 
             {/* Project */}
