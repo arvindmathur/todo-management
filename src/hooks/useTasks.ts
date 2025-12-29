@@ -42,7 +42,6 @@ export function useTasks(initialFilters: TaskFilters = {}) {
       
       // Add user preference for completed task visibility
       const completedTaskVisibility = preferencesData?.preferences?.completedTaskVisibility || "none"
-      console.log("Fetching tasks with completedTaskVisibility:", completedTaskVisibility)
       searchParams.append("includeCompleted", completedTaskVisibility)
       
       Object.entries(currentFilters).forEach(([key, value]) => {
@@ -51,26 +50,19 @@ export function useTasks(initialFilters: TaskFilters = {}) {
         }
       })
 
-      const url = `/api/tasks?${searchParams.toString()}`
-      console.log("Fetching tasks from:", url)
-      const response = await fetch(url)
-      
-      console.log("Response status:", response.status)
+      const response = await fetch(`/api/tasks?${searchParams.toString()}`)
       
       if (response.ok) {
         const data = await response.json()
-        console.log("Tasks data received:", data)
         // Handle paginated response structure
         setTasks(data.data || data.tasks || []) // Support both paginated and direct response formats
         setError(null)
       } else {
         const errorData = await response.json()
-        console.error("API error:", errorData)
         setError(errorData.error || "Failed to load tasks")
         setTasks([]) // Set empty array on error
       }
     } catch (err) {
-      console.error("Fetch tasks exception:", err)
       setError("Failed to load tasks")
       setTasks([]) // Set empty array on error
     } finally {
