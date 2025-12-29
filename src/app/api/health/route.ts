@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { DatabaseConnection } from "@/lib/db-connection"
 import { cache } from "@/lib/cache"
+import { getVersionInfo } from "@/lib/version"
 
 export async function GET() {
   try {
@@ -16,6 +17,7 @@ export async function GET() {
     
     const health = {
       status: dbHealth.healthy ? 'healthy' : 'unhealthy',
+      version: getVersionInfo(),
       timestamp: new Date().toISOString(),
       checks: {
         database: {

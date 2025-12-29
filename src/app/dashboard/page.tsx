@@ -11,6 +11,7 @@ import { TaskCreateForm } from "@/components/tasks/TaskCreateForm"
 import { TaskFiltersComponent } from "@/components/tasks/TaskFilters"
 import { TaskViewTabs } from "@/components/tasks/TaskViewTabs"
 import { TaskFilters } from "@/types/task"
+import VersionDisplay from "@/components/ui/VersionDisplay"
 
 export default function Dashboard() {
   const { data: session, status } = useSession()
@@ -241,6 +242,9 @@ export default function Dashboard() {
           />
         </div>
       </main>
+      
+      {/* Version Display */}
+      <VersionDisplay />
     </div>
   )
 }
