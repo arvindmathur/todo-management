@@ -197,7 +197,35 @@ export function TaskItem({
   }
 
   const handleDueDateSave = async () => {
-    const newDueDate = editingDueDate ? new Date(editingDueDate + 'T00:00:00') : null
+    if (!editingDueDate) {
+      // Clear due date
+      const currentDueDate = task.dueDate ? new Date(task.dueDate) : null
+      
+      if (currentDueDate) {
+        setIsSavingDueDate(true)
+        try {
+          const result = await onUpdate(task.id, { dueDate: null })
+          if (result.success) {
+            setIsEditingDueDate(false)
+            showSuccess("Due Date Cleared", "Task due date has been cleared")
+          } else {
+            setEditingDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "")
+          }
+        } catch (error) {
+          await handleError(error, "Due date update")
+          setEditingDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split('T')[0] : "")
+        } finally {
+          setIsSavingDueDate(false)
+        }
+      } else {
+        setIsEditingDueDate(false)
+      }
+      return
+    }
+
+    // Create date in local timezone to avoid timezone conversion issues
+    const [year, month, day] = editingDueDate.split('-').map(Number)
+    const newDueDate = new Date(year, month - 1, day) // month is 0-indexed
     const currentDueDate = task.dueDate ? new Date(task.dueDate) : null
     
     // Compare dates (ignore time)
@@ -248,9 +276,13 @@ export function TaskItem({
     const dateString = date.toISOString().split('T')[0]
     setEditingDueDate(dateString)
     
+    // Create date in local timezone to avoid timezone conversion issues
+    const [year, month, day] = dateString.split('-').map(Number)
+    const newDueDate = new Date(year, month - 1, day) // month is 0-indexed
+    
     setIsSavingDueDate(true)
     try {
-      const result = await onUpdate(task.id, { dueDate: new Date(dateString + 'T00:00:00') })
+      const result = await onUpdate(task.id, { dueDate: newDueDate })
       if (result.success) {
         setIsEditingDueDate(false)
         showSuccess("Due Date Updated", "Task due date has been updated")

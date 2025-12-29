@@ -169,8 +169,9 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   if (validatedData.dueDate) {
     // Handle both YYYY-MM-DD and full datetime formats
     if (/^\d{4}-\d{2}-\d{2}$/.test(validatedData.dueDate)) {
-      // Date format (YYYY-MM-DD) - set to start of day in UTC
-      dueDate = new Date(validatedData.dueDate + 'T00:00:00.000Z')
+      // Date format (YYYY-MM-DD) - create date in local timezone
+      const [year, month, day] = validatedData.dueDate.split('-').map(Number)
+      dueDate = new Date(year, month - 1, day) // month is 0-indexed
     } else {
       // Try to parse as datetime
       dueDate = new Date(validatedData.dueDate)
