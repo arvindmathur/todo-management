@@ -32,7 +32,7 @@ const priorityLabels = {
   urgent: "Urgent",
 }
 
-const priorityOrder: TaskPriority[] = ["low", "medium", "high", "urgent"]
+const priorityOrder: TaskPriority[] = ["urgent", "high", "medium", "low"]
 
 export function TaskItem({
   task,
@@ -101,15 +101,15 @@ export function TaskItem({
   }, [task.title, task.dueDate, userTimezone])
 
   const handleComplete = async () => {
+    // Prevent uncompleting tasks
+    if (task.status === "completed") {
+      return
+    }
+    
     startLoading()
     try {
-      if (task.status === "completed") {
-        await onReopen(task.id)
-        showSuccess("Task Reopened", "Task has been marked as active")
-      } else {
-        await onComplete(task.id)
-        showSuccess("Task Completed", "Great job! Task has been completed")
-      }
+      await onComplete(task.id)
+      showSuccess("Task Completed", "Great job! Task has been completed")
     } catch (error) {
       await handleError(error, "Task completion")
     } finally {
@@ -229,23 +229,18 @@ export function TaskItem({
       return
     }
 
-    // Create date in user's timezone to avoid timezone conversion issues
-    const newDueDate = createDateInTimezone(editingDueDate, userTimezone)
-    const currentDueDate = task.dueDate ? new Date(task.dueDate) : null
+    // Check if the date has actually changed
+    const currentDateString = task.dueDate ? getDateInputValue(new Date(task.dueDate), userTimezone) : ""
     
-    // Compare dates (ignore time)
-    const isSameDate = newDueDate && currentDueDate 
-      ? newDueDate.toDateString() === currentDueDate.toDateString()
-      : newDueDate === currentDueDate
-
-    if (isSameDate) {
+    if (editingDueDate === currentDateString) {
       setIsEditingDueDate(false)
       return
     }
 
     setIsSavingDueDate(true)
     try {
-      const result = await onUpdate(task.id, { dueDate: newDueDate })
+      // Send the date as a string (YYYY-MM-DD format) as expected by the API
+      const result = await onUpdate(task.id, { dueDate: editingDueDate })
       if (result.success) {
         setIsEditingDueDate(false)
         showSuccess("Due Date Updated", "Task due date has been updated")
@@ -280,12 +275,13 @@ export function TaskItem({
     date.setDate(date.getDate() + days)
     const dateString = getDateInputValue(date, userTimezone)
     
-    // Create date in user's timezone to avoid timezone conversion issues
-    const newDueDate = createDateInTimezone(dateString, userTimezone)
+    // Update the editing state immediately to show the change in UI
+    setEditingDueDate(dateString)
     
     setIsSavingDueDate(true)
     try {
-      const result = await onUpdate(task.id, { dueDate: newDueDate })
+      // Send the date as a string (YYYY-MM-DD format) as expected by the API
+      const result = await onUpdate(task.id, { dueDate: dateString })
       if (result.success) {
         setIsEditingDueDate(false)
         showSuccess("Due Date Updated", "Task due date has been updated")
@@ -303,15 +299,23 @@ export function TaskItem({
   }
 
   const clearDueDate = async () => {
+    // Update the editing state immediately to show the change in UI
+    setEditingDueDate("")
+    
     setIsSavingDueDate(true)
     try {
       const result = await onUpdate(task.id, { dueDate: null })
       if (result.success) {
         setIsEditingDueDate(false)
         showSuccess("Due Date Cleared", "Task due date has been cleared")
+      } else {
+        // Reset to current value on failure
+        setEditingDueDate(task.dueDate ? getDateInputValue(new Date(task.dueDate), userTimezone) : "")
       }
     } catch (error) {
       await handleError(error, "Due date update")
+      // Reset to current value on error
+      setEditingDueDate(task.dueDate ? getDateInputValue(new Date(task.dueDate), userTimezone) : "")
     } finally {
       setIsSavingDueDate(false)
     }
@@ -416,10 +420,11 @@ export function TaskItem({
         <LoadingButton
           loading={isLoading}
           onClick={handleComplete}
+          disabled={task.status === "completed"}
           className={`mt-1 flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
             task.status === "completed"
-              ? "bg-green-500 border-green-500 text-white"
-              : "border-gray-300 hover:border-green-400"
+              ? "bg-green-500 border-green-500 text-white cursor-not-allowed"
+              : "border-gray-300 hover:border-green-400 cursor-pointer"
           }`}
         >
           {task.status === "completed" && (
@@ -653,25 +658,58 @@ export function TaskItem({
                       </div>
                     )}
                   </div>
-                  <div className="flex space-x-1">
+                  <div 
+                    className="flex space-x-1"
+                    onMouseDown={(e) => {
+                      // Prevent the date input from losing focus when clicking buttons
+                      e.preventDefault()
+                    }}
+                  >
                     <button
-                      onClick={() => setQuickDate(0)}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                      }}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setQuickDate(0)
+                      }}
                       disabled={isSavingDueDate}
                       className="px-1 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors"
+                      type="button"
                     >
                       Today
                     </button>
                     <button
-                      onClick={() => setQuickDate(1)}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                      }}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        setQuickDate(1)
+                      }}
                       disabled={isSavingDueDate}
                       className="px-1 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200 transition-colors"
+                      type="button"
                     >
                       Tomorrow
                     </button>
                     <button
-                      onClick={clearDueDate}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                      }}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        clearDueDate()
+                      }}
                       disabled={isSavingDueDate}
                       className="px-1 py-1 text-xs bg-gray-100 text-gray-800 rounded hover:bg-gray-200 transition-colors"
+                      type="button"
                     >
                       Clear
                     </button>

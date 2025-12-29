@@ -9,7 +9,6 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 model Account {
@@ -91,21 +90,22 @@ model VerificationToken {
 }
 
 model Task {
-  id          String    @id @default(cuid())
-  tenantId    String
-  userId      String
-  title       String
-  description String?
-  status      String    @default("active")
-  priority    String    @default("medium")
-  dueDate     DateTime?
-  completedAt DateTime?
-  projectId   String?
-  contextId   String?
-  areaId      String?
-  tags        String[]  @default([])
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  tenantId        String
+  userId          String
+  title           String
+  description     String?
+  status          String    @default("active")
+  priority        String    @default("medium")
+  dueDate         DateTime?
+  originalDueDate DateTime?
+  completedAt     DateTime?
+  projectId       String?
+  contextId       String?
+  areaId          String?
+  tags            String[]  @default([])
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -118,6 +118,7 @@ model Task {
   @@index([tenantId, dueDate])
   @@index([tenantId, userId, status])
   @@index([tenantId, userId, dueDate])
+  @@index([tenantId, userId, completedAt])
 }
 
 model Project {

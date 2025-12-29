@@ -155,6 +155,27 @@ export async function PUT(
     // Prepare update data
     const updateData: any = { ...validatedData }
     
+    // Prevent uncompleting tasks
+    if (validatedData.status !== "completed" && existingTask.status === "completed") {
+      return NextResponse.json(
+        { error: "Cannot uncomplete a completed task" },
+        { status: 400 }
+      )
+    }
+    
+    // Set originalDueDate if this is the first time setting a due date
+    if (validatedData.dueDate !== undefined && !existingTask.originalDueDate && validatedData.dueDate) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(validatedData.dueDate)) {
+        const [year, month, day] = validatedData.dueDate.split('-').map(Number)
+        updateData.originalDueDate = new Date(year, month - 1, day)
+      } else {
+        const parsedDate = new Date(validatedData.dueDate)
+        if (!isNaN(parsedDate.getTime())) {
+          updateData.originalDueDate = parsedDate
+        }
+      }
+    }
+    
     if (validatedData.dueDate !== undefined) {
       if (validatedData.dueDate === null) {
         updateData.dueDate = null
@@ -181,8 +202,6 @@ export async function PUT(
     // Handle status changes
     if (validatedData.status === "completed" && existingTask.status !== "completed") {
       updateData.completedAt = new Date()
-    } else if (validatedData.status !== "completed" && existingTask.status === "completed") {
-      updateData.completedAt = null
     }
 
     const task = await prisma.task.update({

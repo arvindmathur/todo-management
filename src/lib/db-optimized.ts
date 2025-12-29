@@ -237,6 +237,7 @@ export class OptimizedDbService {
       search?: string
       limit?: number
       offset?: number
+      includeCompleted?: string
     } = {}
   ) {
     const {
@@ -249,13 +250,49 @@ export class OptimizedDbService {
       search,
       limit = 50,
       offset = 0,
+      includeCompleted = "none",
     } = filters
 
     // Build optimized where clause
     const where: any = {
       tenantId,
       userId,
-      status,
+    }
+
+    // Handle status and completed task filtering
+    const statusConditions = []
+    if (status === "all" || includeCompleted !== "none") {
+      // Include active tasks
+      statusConditions.push({ status: "active" })
+      
+      // Include completed tasks based on the filter
+      if (includeCompleted !== "none") {
+        const now = new Date()
+        let completedAfter: Date
+        
+        switch (includeCompleted) {
+          case "1day":
+            completedAfter = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+            break
+          case "7days":
+            completedAfter = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+            break
+          case "30days":
+            completedAfter = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+            break
+          default:
+            completedAfter = new Date(0) // Include all completed tasks
+        }
+        
+        statusConditions.push({
+          status: "completed",
+          completedAt: { gte: completedAfter }
+        })
+      }
+      
+      where.OR = statusConditions
+    } else {
+      where.status = status
     }
 
     if (priority) where.priority = priority

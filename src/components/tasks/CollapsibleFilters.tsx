@@ -2,6 +2,7 @@
 
 import React from "react"
 import { TaskStatus, TaskPriority, TaskFilters } from "@/types/task"
+import { CompletedTaskToggle } from "./CompletedTaskToggle"
 
 interface CollapsibleFiltersProps {
   isOpen: boolean
@@ -37,6 +38,14 @@ export const CollapsibleFilters = React.memo(function CollapsibleFilters({
               Clear all
             </button>
           )}
+        </div>
+
+        {/* Completed Task Toggle */}
+        <div className="pb-2 border-b border-gray-200">
+          <CompletedTaskToggle
+            includeCompleted={filters.includeCompleted || "none"}
+            onToggle={(value) => onFiltersChange({ includeCompleted: value })}
+          />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

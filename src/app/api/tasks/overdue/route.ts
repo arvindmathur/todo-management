@@ -16,8 +16,8 @@ export async function GET(request: NextRequest) {
     }
 
     const now = new Date()
-    // Use UTC dates to avoid timezone issues
-    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+    // Use local timezone to match the main API filtering logic
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
 
     const tasks = await prisma.task.findMany({
       where: {
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
         tenantId: session.user.tenantId,
         status: "active",
         dueDate: {
-          lt: todayUTC,
+          lt: today,
         }
       },
       include: {
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ 
       tasks,
-      date: todayUTC.toISOString(),
+      date: today.toISOString(),
       total: tasks.length 
     })
   } catch (error) {

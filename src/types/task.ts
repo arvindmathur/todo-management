@@ -10,6 +10,7 @@ export interface Task {
   status: TaskStatus
   priority: TaskPriority
   dueDate?: Date
+  originalDueDate?: Date
   completedAt?: Date
   projectId?: string
   contextId?: string
@@ -55,7 +56,7 @@ export interface UpdateTaskRequest {
 }
 
 export interface TaskFilters {
-  status?: TaskStatus
+  status?: TaskStatus | "all"
   priority?: TaskPriority
   projectId?: string
   contextId?: string
@@ -64,6 +65,7 @@ export interface TaskFilters {
   search?: string
   limit?: number
   offset?: number
+  includeCompleted?: "none" | "1day" | "7days" | "30days"
 }
 
 export interface TasksResponse {

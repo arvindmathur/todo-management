@@ -27,7 +27,7 @@ const createTaskSchema = z.object({
 })
 
 const taskFiltersSchema = z.object({
-  status: z.enum(["active", "completed", "archived"]).optional(),
+  status: z.enum(["active", "completed", "archived", "all"]).optional(),
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
   projectId: z.string().optional(),
   contextId: z.string().optional(),
@@ -36,6 +36,7 @@ const taskFiltersSchema = z.object({
   search: z.string().optional(),
   limit: z.string().transform(Number).optional(),
   offset: z.string().transform(Number).optional(),
+  includeCompleted: z.enum(["none", "1day", "7days", "30days"]).optional(),
 })
 
 // Get tasks with filtering and improved connection management
@@ -189,6 +190,7 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
         description: validatedData.description,
         priority: validatedData.priority,
         dueDate,
+        originalDueDate: dueDate, // Set original due date when task is created
         projectId: validatedData.projectId,
         contextId: validatedData.contextId,
         areaId: validatedData.areaId,

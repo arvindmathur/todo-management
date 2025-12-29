@@ -13,16 +13,17 @@ export function createDateInTimezone(dateString: string, timezone?: string): Dat
   // Parse YYYY-MM-DD format
   const [year, month, day] = dateString.split('-').map(Number)
   
-  if (timezone) {
-    // Create date in specific timezone
-    const date = new Date()
-    date.setFullYear(year, month - 1, day)
-    date.setHours(0, 0, 0, 0)
-    return date
-  } else {
-    // Create date in local timezone
-    return new Date(year, month - 1, day)
+  if (isNaN(year) || isNaN(month) || isNaN(day)) {
+    console.error('Invalid date string format:', dateString)
+    return new Date()
   }
+  
+  // Always create date in local timezone to avoid timezone conversion issues
+  // The date input field expects local dates, not UTC dates
+  const date = new Date(year, month - 1, day) // month is 0-indexed
+  date.setHours(0, 0, 0, 0) // Set to start of day
+  
+  return date
 }
 
 // Format a date according to user preferences
