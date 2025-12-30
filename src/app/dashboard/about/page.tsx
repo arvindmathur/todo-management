@@ -138,6 +138,7 @@ export default function AboutPage() {
             >
               Kiro
             </a>
+            {" "}for productivity enthusiasts
           </p>
         </div>
       </main>

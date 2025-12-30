@@ -12,7 +12,6 @@ import { TaskList } from "@/components/tasks/TaskList"
 import { TaskViewTabs } from "@/components/tasks/TaskViewTabs"
 import { CollapsibleFilters } from "@/components/tasks/CollapsibleFilters"
 import { TaskFilters } from "@/types/task"
-import VersionDisplay from "@/components/ui/VersionDisplay"
 
 export default function Dashboard() {
   const { data: session, status } = useSession()
@@ -116,13 +115,6 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center space-x-2 sm:space-x-4">
               <Link
-                href="/dashboard/about"
-                className="text-gray-700 hover:text-gray-900 px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium"
-              >
-                <span className="hidden sm:inline">About</span>
-                <span className="sm:hidden">?</span>
-              </Link>
-              <Link
                 href="/dashboard/preferences"
                 className="text-gray-700 hover:text-gray-900 px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium"
               >
@@ -209,8 +201,35 @@ export default function Dashboard() {
         </div>
       </main>
       
-      {/* Version Display */}
-      <VersionDisplay />
+      {/* Footer with About and Kiro Attribution */}
+      <footer className="bg-white border-t border-gray-200 mt-8">
+        <div className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col sm:flex-row justify-between items-center space-y-2 sm:space-y-0">
+            <div className="flex items-center space-x-4">
+              <Link
+                href="/dashboard/about"
+                className="text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors"
+              >
+                About
+              </Link>
+            </div>
+            <div className="text-center text-sm text-gray-500">
+              <p>
+                Version 3.0.1 • Built with{" "}
+                <a
+                  href="https://kiro.ai"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:text-blue-800 transition-colors"
+                >
+                  Kiro
+                </a>
+                {" "}for productivity enthusiasts
+              </p>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }
