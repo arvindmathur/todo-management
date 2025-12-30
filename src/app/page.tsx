@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { FeatureHighlights } from "@/components/marketing/FeatureHighlights"
 
 export default function Home() {
@@ -88,12 +89,19 @@ export default function Home() {
           <p>
             Built with{" "}
             <a
-              href="https://kiro.ai"
+              href="https://kiro.dev"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-600 hover:text-blue-800 font-medium transition-colors"
+              className="text-blue-600 hover:text-blue-800 font-medium transition-colors inline-flex items-center"
             >
               Kiro
+              <Image
+                src="/images/kiro-logo.png"
+                alt="Kiro Logo"
+                width={16}
+                height={16}
+                className="ml-1"
+              />
             </a>
             {" "}• An AI-powered development assistant
           </p>

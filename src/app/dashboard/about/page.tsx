@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { FeatureHighlights } from "@/components/marketing/FeatureHighlights"
 
 export default function AboutPage() {
@@ -117,7 +118,25 @@ export default function AboutPage() {
                 <li>• Prisma ORM</li>
                 <li>• NextAuth.js for authentication</li>
                 <li>• Tailwind CSS for styling</li>
-                <li>• Deployed on Vercel</li>
+                <li>• Deployed on{" "}
+                  <a
+                    href="https://vercel.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    Vercel
+                  </a>
+                  {" "}with{" "}
+                  <a
+                    href="https://supabase.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 transition-colors"
+                  >
+                    Supabase
+                  </a>
+                </li>
               </ul>
             </div>
           </div>
@@ -126,14 +145,21 @@ export default function AboutPage() {
         {/* Version Information */}
         <div className="text-center text-sm text-gray-500">
           <p>
-            Version 3.0.2 • Built with{" "}
+            Version 3.0.3 • Built with{" "}
             <a
-              href="https://kiro.ai"
+              href="https://kiro.dev"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-600 hover:text-blue-800 transition-colors"
+              className="text-blue-600 hover:text-blue-800 transition-colors inline-flex items-center"
             >
               Kiro
+              <Image
+                src="/images/kiro-logo.png"
+                alt="Kiro Logo"
+                width={16}
+                height={16}
+                className="ml-1"
+              />
             </a>
             {" "}for productivity enthusiasts
           </p>

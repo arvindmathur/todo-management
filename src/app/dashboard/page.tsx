@@ -4,6 +4,7 @@ import { useSession, signOut } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { useTasks } from "@/hooks/useTasks"
 import { useTaskViews } from "@/hooks/useTaskViews"
 import { useUserPreferences } from "@/hooks/useUserPreferences"
@@ -215,14 +216,21 @@ export default function Dashboard() {
             </div>
             <div className="text-center text-sm text-gray-500">
               <p>
-                Version 3.0.2 • Built with{" "}
+                Version 3.0.3 • Built with{" "}
                 <a
-                  href="https://kiro.ai"
+                  href="https://kiro.dev"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 transition-colors"
+                  className="text-blue-600 hover:text-blue-800 transition-colors inline-flex items-center"
                 >
                   Kiro
+                  <Image
+                    src="/images/kiro-logo.png"
+                    alt="Kiro Logo"
+                    width={16}
+                    height={16}
+                    className="ml-1"
+                  />
                 </a>
                 {" "}for productivity enthusiasts
               </p>
