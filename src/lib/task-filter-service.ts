@@ -98,76 +98,66 @@ export class TaskFilterService {
         }
       }
 
-      // Build base where clause with validation
-      const where: any = {
+      // Build the base filters first (non-status filters)
+      const baseFilters: any = {
         tenantId,
         userId,
       }
 
-      // Handle status filtering with completed task visibility
-      if (status === "all") {
-        // Include completed tasks based on user preference
-        if (includeCompleted !== "none") {
-          where.OR = [
-            { status: "active" },
-            { 
-              status: "completed",
-              completedAt: { gte: boundaries.completedTaskCutoff }
-            }
-          ]
-        } else {
-          where.status = "active"
-        }
-      } else if (status === "completed") {
-        where.status = "completed"
-        if (includeCompleted !== "none") {
-          where.completedAt = { gte: boundaries.completedTaskCutoff }
-        }
-      } else {
-        where.status = "active"
-      }
-
       // Add simple filters with validation
       if (priority && ['low', 'medium', 'high', 'urgent'].includes(priority)) {
-        where.priority = priority
+        baseFilters.priority = priority
       }
       if (projectId && typeof projectId === 'string') {
-        where.projectId = projectId
+        baseFilters.projectId = projectId
       }
       if (contextId && typeof contextId === 'string') {
-        where.contextId = contextId
+        baseFilters.contextId = contextId
       }
       if (areaId && typeof areaId === 'string') {
-        where.areaId = areaId
+        baseFilters.areaId = areaId
       }
 
       // Add search filter with validation
       if (search && typeof search === 'string' && search.trim().length > 0) {
-        where.title = { contains: search.trim(), mode: "insensitive" }
+        baseFilters.title = { contains: search.trim(), mode: "insensitive" }
       }
 
-      // Handle date-based filtering with timezone awareness
+      // Handle date-based filtering with timezone awareness and status filtering combined
+      let where: any
       if (dueDate) {
         try {
           const dateFilter = this.buildDateFilter(dueDate, boundaries, includeCompleted)
           if (dateFilter) {
-            if (where.OR && dateFilter.OR) {
-              // Combine OR conditions
-              where.AND = [
-                { OR: where.OR },
-                { OR: dateFilter.OR }
-              ]
-              delete where.OR
-            } else if (dateFilter.OR) {
-              where.OR = dateFilter.OR
+            // Combine base filters with date filter
+            // When date filter has OR conditions, we need to ensure base filters apply to all branches
+            if (dateFilter.OR) {
+              // Apply base filters to each OR branch
+              where = {
+                ...baseFilters,
+                OR: dateFilter.OR.map((condition: any) => ({
+                  ...condition
+                }))
+              }
             } else {
-              Object.assign(where, dateFilter)
+              // Simple date filter, merge directly
+              where = {
+                ...baseFilters,
+                ...dateFilter
+              }
             }
+          } else {
+            // No date filter, just apply status filtering
+            where = this.applyStatusFilter(baseFilters, status, includeCompleted, boundaries)
           }
         } catch (dateFilterError) {
           console.error('Error building date filter:', dateFilterError)
-          // Continue without date filter rather than failing completely
+          // Fall back to status filtering only
+          where = this.applyStatusFilter(baseFilters, status, includeCompleted, boundaries)
         }
+      } else {
+        // No date filter, just apply status filtering
+        where = this.applyStatusFilter(baseFilters, status, includeCompleted, boundaries)
       }
 
       // Execute database queries with enhanced error handling
@@ -410,6 +400,51 @@ export class TaskFilterService {
   }
 
   /**
+   * Apply status filtering to base filters
+   */
+  private static applyStatusFilter(
+    baseFilters: any,
+    status: string,
+    includeCompleted: string,
+    boundaries: any
+  ): any {
+    if (status === "all") {
+      // Include completed tasks based on user preference
+      if (includeCompleted !== "none") {
+        return {
+          ...baseFilters,
+          OR: [
+            { status: "active" },
+            { 
+              status: "completed",
+              completedAt: { gte: boundaries.completedTaskCutoff }
+            }
+          ]
+        }
+      } else {
+        return {
+          ...baseFilters,
+          status: "active"
+        }
+      }
+    } else if (status === "completed") {
+      const completedFilter: any = {
+        ...baseFilters,
+        status: "completed"
+      }
+      if (includeCompleted !== "none") {
+        completedFilter.completedAt = { gte: boundaries.completedTaskCutoff }
+      }
+      return completedFilter
+    } else {
+      return {
+        ...baseFilters,
+        status: "active"
+      }
+    }
+  }
+
+  /**
    * Build date filter conditions based on filter type and boundaries
    */
   private static buildDateFilter(
@@ -496,9 +531,27 @@ export class TaskFilterService {
         }
 
       case "no-due-date":
-        return {
-          status: "active",
-          dueDate: null
+        if (includeCompletedTasks) {
+          return {
+            OR: [
+              // Active tasks with no due date
+              {
+                status: "active",
+                dueDate: null
+              },
+              // Completed tasks with no due date
+              {
+                status: "completed",
+                completedAt: { gte: boundaries.completedTaskCutoff },
+                dueDate: null
+              }
+            ]
+          }
+        } else {
+          return {
+            status: "active",
+            dueDate: null
+          }
         }
 
       case "focus":
