@@ -7,8 +7,8 @@ import { ToastProvider, ErrorBoundary } from '@/components/feedback'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Todo Management SaaS',
-  description: 'A modern todo management application with GTD methodology support',
+  title: 'ToDo Management',
+  description: 'A modern todo management application for organizing your tasks and projects',
 }
 
 export default function RootLayout({

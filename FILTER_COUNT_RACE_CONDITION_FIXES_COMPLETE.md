@@ -1,6 +1,6 @@
 # Filter Count Race Condition Fixes - COMPLETE
 
-## Version: 2.25.0
+## Version: 2.24.1
 
 ## Issues Fixed
 

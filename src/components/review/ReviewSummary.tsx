@@ -146,7 +146,7 @@ export function ReviewSummary({ summary }: ReviewSummaryProps) {
             <div className="ml-3">
               <h3 className="text-sm font-medium text-green-800">System Looking Good!</h3>
               <div className="mt-2 text-sm text-green-700">
-                <p>All your projects and areas are in good shape. Great job maintaining your GTD system!</p>
+                <p>All your projects and areas are in good shape. Great job maintaining your productivity system!</p>
               </div>
             </div>
           </div>

@@ -3,8 +3,6 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useUserPreferences, UserPreferences } from "@/hooks/useUserPreferences"
-import { GTDModeToggle } from "@/components/gtd/GTDModeToggle"
-import { GTDOnboarding } from "@/components/gtd/GTDOnboarding"
 import { CompletedTaskToggle } from "@/components/tasks/CompletedTaskToggle"
 import { getTimezoneOptions, detectTimezone } from "@/lib/timezone"
 
@@ -13,7 +11,6 @@ export function PreferencesForm() {
   const { preferencesData, updatePreferences, loading, error } = useUserPreferences()
   const [formData, setFormData] = useState<UserPreferences | null>(null)
   const [isUpdating, setIsUpdating] = useState(false)
-  const [showOnboarding, setShowOnboarding] = useState(false)
   const [updateMessage, setUpdateMessage] = useState<string | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   
@@ -138,21 +135,15 @@ export function PreferencesForm() {
   }
 
   const handleGTDToggle = (enabled: boolean) => {
-    if (enabled && !preferencesData?.preferences?.gtdOnboardingCompleted) {
-      setShowOnboarding(true)
-    }
+    // GTD functionality hidden - do nothing
   }
 
   const handleOnboardingComplete = () => {
-    setShowOnboarding(false)
-    setUpdateMessage("GTD mode enabled! You can now access all GTD features.")
-    setTimeout(() => setUpdateMessage(null), 5000)
+    // GTD functionality hidden - do nothing
   }
 
   const handleOnboardingSkip = () => {
-    setShowOnboarding(false)
-    setUpdateMessage("GTD mode enabled. You can access the onboarding guide anytime from help.")
-    setTimeout(() => setUpdateMessage(null), 5000)
+    // GTD functionality hidden - do nothing
   }
 
   const handlePreferenceUpdate = async (updates: Partial<UserPreferences>) => {
@@ -311,91 +302,6 @@ export function PreferencesForm() {
                 </div>
               </form>
             )}
-          </div>
-        </div>
-
-        {/* GTD Mode Section */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Productivity Mode</h3>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <h4 className="text-sm font-medium text-gray-900">Getting Things Done (GTD)</h4>
-                <p className="text-sm text-gray-500 mt-1">
-                  Enable advanced productivity features including inbox processing, contexts, areas, and weekly reviews.
-                </p>
-              </div>
-              <GTDModeToggle onToggle={handleGTDToggle} showLabel={false} />
-            </div>
-
-            {preferencesData?.gtdEnabled && (
-              <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <h3 className="text-sm font-medium text-blue-800">GTD Mode Active</h3>
-                    <div className="mt-2 text-sm text-blue-700">
-                      <p>You now have access to inbox processing, contexts, areas, and weekly reviews.</p>
-                      {!preferencesData.preferences?.gtdOnboardingCompleted && (
-                        <button
-                          onClick={() => setShowOnboarding(true)}
-                          className="mt-2 text-sm font-medium text-blue-800 hover:text-blue-900 underline"
-                        >
-                          View GTD onboarding guide
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Default View */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">Default View</h3>
-          
-          <div className="space-y-3">
-            <label className="flex items-center">
-              <input
-                type="radio"
-                name="defaultView"
-                value="simple"
-                checked={formData.defaultView === "simple"}
-                onChange={(e) => handlePreferenceUpdate({ defaultView: e.target.value as "simple" | "gtd" })}
-                disabled={isUpdating}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-              />
-              <div className="ml-3">
-                <span className="text-sm font-medium text-gray-900">Simple Task Management</span>
-                <p className="text-sm text-gray-500">Focus on basic task creation, completion, and organization.</p>
-              </div>
-            </label>
-            
-            <label className="flex items-center">
-              <input
-                type="radio"
-                name="defaultView"
-                value="gtd"
-                checked={formData.defaultView === "gtd"}
-                onChange={(e) => handlePreferenceUpdate({ defaultView: e.target.value as "simple" | "gtd" })}
-                disabled={isUpdating || !preferencesData?.gtdEnabled}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 disabled:opacity-50"
-              />
-              <div className="ml-3">
-                <span className="text-sm font-medium text-gray-900">GTD Methodology</span>
-                <p className="text-sm text-gray-500">
-                  Full GTD workflow with inbox, contexts, areas, and reviews.
-                  {!preferencesData?.gtdEnabled && " (Enable GTD mode first)"}
-                </p>
-              </div>
-            </label>
           </div>
         </div>
 
@@ -801,13 +707,13 @@ export function PreferencesForm() {
             <label className="flex items-center justify-between">
               <div>
                 <span className="text-sm font-medium text-gray-900">Weekly review reminders</span>
-                <p className="text-sm text-gray-500">Get reminded to conduct your weekly GTD review</p>
+                <p className="text-sm text-gray-500">Get reminded to conduct your weekly productivity review</p>
               </div>
               <input
                 type="checkbox"
                 checked={formData.notifications.weeklyReview}
                 onChange={(e) => handleNotificationUpdate({ weeklyReview: e.target.checked })}
-                disabled={isUpdating || !preferencesData?.gtdEnabled}
+                disabled={isUpdating}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
               />
             </label>
@@ -981,13 +887,7 @@ export function PreferencesForm() {
         </div>
       </div>
 
-      {/* GTD Onboarding Modal */}
-      {showOnboarding && (
-        <GTDOnboarding
-          onComplete={handleOnboardingComplete}
-          onSkip={handleOnboardingSkip}
-        />
-      )}
+      {/* GTD Onboarding Modal - Hidden */}
     </>
   )
 }

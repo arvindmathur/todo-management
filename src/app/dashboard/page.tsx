@@ -116,6 +116,13 @@ export default function Dashboard() {
             </div>
             <div className="flex items-center space-x-2 sm:space-x-4">
               <Link
+                href="/dashboard/about"
+                className="text-gray-700 hover:text-gray-900 px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium"
+              >
+                <span className="hidden sm:inline">About</span>
+                <span className="sm:hidden">?</span>
+              </Link>
+              <Link
                 href="/dashboard/preferences"
                 className="text-gray-700 hover:text-gray-900 px-2 sm:px-3 py-2 rounded-md text-xs sm:text-sm font-medium"
               >

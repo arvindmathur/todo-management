@@ -1,6 +1,6 @@
 # Focus Filter Initial Load Fix - COMPLETE
 
-## Version: 2.26.0
+## Version: 2.24.1
 
 ## Issue Fixed
 
