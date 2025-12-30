@@ -126,7 +126,18 @@ export default function AboutPage() {
         {/* Version Information */}
         <div className="text-center text-sm text-gray-500">
           <p>
-            Version 3.0.0 • Built with ❤️ for productivity enthusiasts
+            Version 3.0.1 • Built with ❤️ for productivity enthusiasts
+          </p>
+          <p className="mt-2">
+            Built with{" "}
+            <a
+              href="https://kiro.ai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 transition-colors"
+            >
+              Kiro
+            </a>
           </p>
         </div>
       </main>

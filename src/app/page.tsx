@@ -58,7 +58,7 @@ export default function Home() {
         </div>
 
         {/* GitHub and Community Links */}
-        <div className="flex justify-center space-x-6 text-sm text-gray-600">
+        <div className="flex justify-center space-x-6 text-sm text-gray-600 mb-6">
           <a
             href="https://github.com/arvindmathur/todo-management"
             target="_blank"
@@ -81,6 +81,22 @@ export default function Home() {
             </svg>
             Request Features / Report Issues
           </a>
+        </div>
+
+        {/* Built with Kiro */}
+        <div className="text-center text-sm text-gray-500">
+          <p>
+            Built with{" "}
+            <a
+              href="https://kiro.ai"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 font-medium transition-colors"
+            >
+              Kiro
+            </a>
+            {" "}• An AI-powered development assistant
+          </p>
         </div>
       </div>
     </main>
