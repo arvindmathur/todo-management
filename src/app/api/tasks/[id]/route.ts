@@ -159,9 +159,11 @@ export async function PUT(
     
     // Set originalDueDate if this is the first time setting a due date
     if (validatedData.dueDate !== undefined && !existingTask.originalDueDate && validatedData.dueDate) {
+      // Import timezone service
+      const { TimezoneService } = await import('@/lib/timezone-service')
+      
       if (/^\d{4}-\d{2}-\d{2}$/.test(validatedData.dueDate)) {
-        const [year, month, day] = validatedData.dueDate.split('-').map(Number)
-        updateData.originalDueDate = new Date(year, month - 1, day)
+        updateData.originalDueDate = TimezoneService.convertToUTC(validatedData.dueDate, await TimezoneService.getUserTimezone(session.user.id))
       } else {
         const parsedDate = new Date(validatedData.dueDate)
         if (!isNaN(parsedDate.getTime())) {
@@ -174,11 +176,13 @@ export async function PUT(
       if (validatedData.dueDate === null) {
         updateData.dueDate = null
       } else if (validatedData.dueDate) {
+        // Import timezone service
+        const { TimezoneService } = await import('@/lib/timezone-service')
+        
         // Handle both YYYY-MM-DD and full datetime formats
         if (/^\d{4}-\d{2}-\d{2}$/.test(validatedData.dueDate)) {
-          // Date format (YYYY-MM-DD) - create date in local timezone
-          const [year, month, day] = validatedData.dueDate.split('-').map(Number)
-          updateData.dueDate = new Date(year, month - 1, day) // month is 0-indexed
+          // Date format (YYYY-MM-DD) - convert using user's timezone
+          updateData.dueDate = TimezoneService.convertToUTC(validatedData.dueDate, await TimezoneService.getUserTimezone(session.user.id))
         } else {
           // Try to parse as datetime
           const parsedDate = new Date(validatedData.dueDate)

@@ -25,86 +25,58 @@ export class OptimizedDbService {
     const cacheKey = `counts:${tenantId}:${userId}`
     
     return cache.getOrSet(cacheKey, async () => {
-      // Use a single query with conditional aggregation for better performance
-      const result = await withDatabaseRetry(
-        () => prisma.task.groupBy({
-          by: ["status"],
-          where: {
-            tenantId,
-            userId,
-          },
-          _count: {
-            id: true,
-          },
-        }),
-        'getTaskCounts-groupBy'
-      )
+      // Import the new task filter service for timezone-aware counts
+      const { TaskFilterService } = await import('./task-filter-service')
+      
+      try {
+        // Use the new timezone-aware filter service
+        const counts = await TaskFilterService.getFilterCounts(tenantId, userId)
+        
+        // Convert to the expected format for backward compatibility
+        return {
+          active: counts.all - (counts.all - counts.focus - counts.upcoming - counts.noDueDate), // Approximate active count
+          completed: 0, // Will be included in other counts based on user preference
+          archived: 0,
+          overdue: counts.overdue,
+          today: counts.today,
+          upcoming: counts.upcoming,
+          focus: counts.focus,
+          noDueDate: counts.noDueDate,
+          all: counts.all
+        }
+      } catch (error) {
+        console.error('Error getting timezone-aware task counts:', error)
+        
+        // Fallback to original logic if new service fails
+        const result = await withDatabaseRetry(
+          () => prisma.task.groupBy({
+            by: ["status"],
+            where: {
+              tenantId,
+              userId,
+            },
+            _count: {
+              id: true,
+            },
+          }),
+          'getTaskCounts-groupBy-fallback'
+        )
 
-      // Transform to expected format
-      const counts = {
-        active: 0,
-        completed: 0,
-        archived: 0,
-        overdue: 0,
-        today: 0,
-        upcoming: 0,
+        const counts = {
+          active: 0,
+          completed: 0,
+          archived: 0,
+          overdue: 0,
+          today: 0,
+          upcoming: 0,
+        }
+
+        result.forEach((group) => {
+          counts[group.status as keyof typeof counts] = group._count.id
+        })
+
+        return counts
       }
-
-      result.forEach((group) => {
-        counts[group.status as keyof typeof counts] = group._count.id
-      })
-
-      // Get date-based counts in a separate optimized query
-      const now = new Date()
-      // Use UTC dates to avoid timezone issues
-      const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
-      const tomorrowUTC = new Date(todayUTC)
-      tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1)
-
-      const [overdue, todayTasks, upcoming] = await Promise.all([
-        withDatabaseRetry(
-          () => prisma.task.count({
-            where: {
-              tenantId,
-              userId,
-              status: "active",
-              dueDate: { lt: todayUTC },
-            },
-          }),
-          'getTaskCounts-overdue'
-        ),
-        withDatabaseRetry(
-          () => prisma.task.count({
-            where: {
-              tenantId,
-              userId,
-              status: "active",
-              dueDate: { gte: todayUTC, lt: tomorrowUTC },
-            },
-          }),
-          'getTaskCounts-today'
-        ),
-        withDatabaseRetry(
-          () => prisma.task.count({
-            where: {
-              tenantId,
-              userId,
-              status: "active",
-              dueDate: { 
-                gte: tomorrowUTC,
-                lt: new Date(tomorrowUTC.getTime() + 7 * 24 * 60 * 60 * 1000) // 7 days from tomorrow
-              },
-            },
-          }),
-          'getTaskCounts-upcoming'
-        ),
-      ])
-
-      counts.overdue = overdue
-      counts.today = todayTasks
-      counts.upcoming = upcoming
-
-      return counts
     }, 60) // Cache for 1 minute
   }
 
@@ -223,7 +195,7 @@ export class OptimizedDbService {
     })
   }
 
-  // Get tasks with optimized query and pagination (simplified for reliability)
+  // Get tasks with optimized query and pagination (timezone-aware)
   static async getTasks(
     tenantId: string,
     userId: string,
@@ -240,129 +212,140 @@ export class OptimizedDbService {
       includeCompleted?: string
     } = {}
   ) {
-    const {
-      status = "active",
-      priority,
-      projectId,
-      contextId,
-      areaId,
-      dueDate,
-      search,
-      limit = 50,
-      offset = 0,
-      includeCompleted = "none",
-    } = filters
-
-    // Build simplified where clause to avoid complex OR/AND issues
-    const where: any = {
-      tenantId,
-      userId,
-    }
-
-    // Simplified status handling
-    if (status === "all") {
-      // Don't add status filter - get all tasks
-    } else if (status === "completed") {
-      where.status = "completed"
-    } else {
-      where.status = "active"
-    }
-
-    // Add simple filters
-    if (priority) where.priority = priority
-    if (projectId) where.projectId = projectId
-    if (contextId) where.contextId = contextId
-    if (areaId) where.areaId = areaId
-
-    // Simplified search - only search in title for now
-    if (search) {
-      where.title = { contains: search, mode: "insensitive" }
-    }
-
-    // Simplified date filters
-    if (dueDate) {
-      const now = new Date()
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      const tomorrow = new Date(today)
-      tomorrow.setDate(tomorrow.getDate() + 1)
-
-      switch (dueDate) {
-        case "today":
-          where.dueDate = { gte: today, lt: tomorrow }
-          break
-        case "overdue":
-          where.dueDate = { lt: today }
-          break
-        case "upcoming":
-          const futureDate = new Date(tomorrow)
-          futureDate.setDate(futureDate.getDate() + 7)
-          where.dueDate = { gte: tomorrow, lt: futureDate }
-          break
-        case "no-due-date":
-          where.dueDate = null
-          break
-        case "focus":
-          // For focus, just get overdue tasks for now
-          where.dueDate = { lt: today }
-          break
-      }
-    }
-
-    // Use simplified query with basic error handling
     try {
-      const [tasks, totalCount] = await Promise.all([
-        withDatabaseRetry(
-          () => prisma.task.findMany({
-            where,
-            select: {
-              id: true,
-              title: true,
-              description: true,
-              status: true,
-              priority: true,
-              dueDate: true,
-              completedAt: true,
-              tags: true,
-              createdAt: true,
-              updatedAt: true,
-              project: {
-                select: { id: true, name: true },
-              },
-              context: {
-                select: { id: true, name: true, icon: true },
-              },
-              area: {
-                select: { id: true, name: true, color: true },
-              },
-            },
-            orderBy: [
-              { priority: "desc" },
-              { dueDate: "asc" },
-              { createdAt: "desc" },
-            ],
-            take: limit,
-            skip: offset,
-          }),
-          'getTasks-findMany'
-        ),
-        withDatabaseRetry(
-          () => prisma.task.count({ where }),
-          'getTasks-count'
-        ),
-      ])
-
-      return {
-        tasks,
-        totalCount,
-        hasMore: offset + limit < totalCount,
-      }
+      // Import the new task filter service for timezone-aware filtering
+      const { TaskFilterService } = await import('./task-filter-service')
+      
+      // Use the new timezone-aware filter service
+      return await TaskFilterService.getFilteredTasks(tenantId, userId, filters)
     } catch (error) {
-      console.error('Error in getTasks:', error)
-      // Return empty result on error to prevent app crash
-      return {
-        tasks: [],
-        totalCount: 0,
-        hasMore: false,
+      console.error('Error in timezone-aware getTasks, falling back to original logic:', error)
+      
+      // Fallback to original logic if new service fails
+      const {
+        status = "active",
+        priority,
+        projectId,
+        contextId,
+        areaId,
+        dueDate,
+        search,
+        limit = 50,
+        offset = 0,
+        includeCompleted = "none",
+      } = filters
+
+      // Build simplified where clause to avoid complex OR/AND issues
+      const where: any = {
+        tenantId,
+        userId,
+      }
+
+      // Simplified status handling
+      if (status === "all") {
+        // Don't add status filter - get all tasks
+      } else if (status === "completed") {
+        where.status = "completed"
+      } else {
+        where.status = "active"
+      }
+
+      // Add simple filters
+      if (priority) where.priority = priority
+      if (projectId) where.projectId = projectId
+      if (contextId) where.contextId = contextId
+      if (areaId) where.areaId = areaId
+
+      // Simplified search - only search in title for now
+      if (search) {
+        where.title = { contains: search, mode: "insensitive" }
+      }
+
+      // Simplified date filters (using server timezone as fallback)
+      if (dueDate) {
+        const now = new Date()
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        const tomorrow = new Date(today)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+
+        switch (dueDate) {
+          case "today":
+            where.dueDate = { gte: today, lt: tomorrow }
+            break
+          case "overdue":
+            where.dueDate = { lt: today }
+            break
+          case "upcoming":
+            const futureDate = new Date(tomorrow)
+            futureDate.setDate(futureDate.getDate() + 7)
+            where.dueDate = { gte: tomorrow, lt: futureDate }
+            break
+          case "no-due-date":
+            where.dueDate = null
+            break
+          case "focus":
+            // For focus, just get overdue tasks for now
+            where.dueDate = { lt: today }
+            break
+        }
+      }
+
+      // Use simplified query with basic error handling
+      try {
+        const [tasks, totalCount] = await Promise.all([
+          withDatabaseRetry(
+            () => prisma.task.findMany({
+              where,
+              select: {
+                id: true,
+                title: true,
+                description: true,
+                status: true,
+                priority: true,
+                dueDate: true,
+                completedAt: true,
+                tags: true,
+                createdAt: true,
+                updatedAt: true,
+                project: {
+                  select: { id: true, name: true },
+                },
+                context: {
+                  select: { id: true, name: true, icon: true },
+                },
+                area: {
+                  select: { id: true, name: true, color: true },
+                },
+              },
+              orderBy: [
+                { priority: "desc" },
+                { dueDate: "asc" },
+                { createdAt: "desc" },
+              ],
+              take: limit,
+              skip: offset,
+            }),
+            'getTasks-findMany-fallback'
+          ),
+          withDatabaseRetry(
+            () => prisma.task.count({ where }),
+            'getTasks-count-fallback'
+          ),
+        ])
+
+        return {
+          tasks,
+          totalCount,
+          hasMore: offset + limit < totalCount,
+        }
+      } catch (error) {
+        console.error('Error in fallback getTasks:', error)
+        // Return empty result on error to prevent app crash
+        return {
+          tasks: [],
+          totalCount: 0,
+          hasMore: false,
+        }
       }
     }
   }

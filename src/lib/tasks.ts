@@ -1,6 +1,7 @@
 import { Task, TaskPriority, TaskStatus } from "@/types/task"
 import { prisma } from "./prisma"
 import { DatabaseConnection } from "./db-connection"
+import { TimezoneService } from "./timezone-service"
 
 // Project-related types
 export interface Project {
@@ -76,41 +77,69 @@ export function getStatusLabel(status: TaskStatus): string {
   }
 }
 
-export function isTaskOverdue(task: Task): boolean {
+export async function isTaskOverdue(task: Task, userId: string): Promise<boolean> {
   if (!task.dueDate || task.status === "completed") return false
   
-  const now = new Date()
-  const dueDate = new Date(task.dueDate)
-  
-  // Compare dates in local timezone (user's perspective)
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const taskDueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
-  
-  return taskDueDate < today
+  try {
+    // Get user's timezone and current date boundaries
+    const boundaries = await TimezoneService.getDateBoundaries(userId)
+    const taskDueTime = new Date(task.dueDate).getTime()
+    
+    // Task is overdue if due before today in user's timezone
+    return taskDueTime < boundaries.todayStart.getTime()
+  } catch (error) {
+    console.error('Error checking if task is overdue:', error)
+    // Fallback to server timezone
+    const now = new Date()
+    const dueDate = new Date(task.dueDate)
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const taskDueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
+    return taskDueDate < today
+  }
 }
 
-export function isTaskDueToday(task: Task): boolean {
+export async function isTaskDueToday(task: Task, userId: string): Promise<boolean> {
   if (!task.dueDate) return false
   
-  const now = new Date()
-  const dueDate = new Date(task.dueDate)
-  
-  // Compare dates in local timezone (user's perspective)
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const taskDueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
-  
-  return taskDueDate.getTime() === today.getTime()
+  try {
+    // Get user's timezone and current date boundaries
+    const boundaries = await TimezoneService.getDateBoundaries(userId)
+    const taskDueTime = new Date(task.dueDate).getTime()
+    
+    // Task is due today if within today's boundaries in user's timezone
+    return taskDueTime >= boundaries.todayStart.getTime() && 
+           taskDueTime < boundaries.todayEnd.getTime()
+  } catch (error) {
+    console.error('Error checking if task is due today:', error)
+    // Fallback to server timezone
+    const now = new Date()
+    const dueDate = new Date(task.dueDate)
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const taskDueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
+    return taskDueDate.getTime() === today.getTime()
+  }
 }
 
-export function isTaskUpcoming(task: Task): boolean {
+export async function isTaskUpcoming(task: Task, userId: string): Promise<boolean> {
   if (!task.dueDate) return false
   
-  const now = new Date()
-  const dueDate = new Date(task.dueDate)
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const taskDueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
-  
-  return taskDueDate > today
+  try {
+    // Get user's timezone and current date boundaries
+    const boundaries = await TimezoneService.getDateBoundaries(userId)
+    const taskDueTime = new Date(task.dueDate).getTime()
+    
+    // Task is upcoming if due after today but within the next week in user's timezone
+    return taskDueTime >= boundaries.tomorrowStart.getTime() && 
+           taskDueTime < boundaries.weekFromNow.getTime()
+  } catch (error) {
+    console.error('Error checking if task is upcoming:', error)
+    // Fallback to server timezone
+    const now = new Date()
+    const dueDate = new Date(task.dueDate)
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const taskDueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
+    return taskDueDate > today
+  }
 }
 
 export function formatDueDate(dueDate: Date): string {

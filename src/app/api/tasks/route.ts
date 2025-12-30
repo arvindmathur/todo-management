@@ -68,9 +68,11 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
 
   console.log('📋 Tasks API: Filters validated:', { filters, paginationParams })
 
-  // Use optimized database service with enhanced connection management
+  // Use new timezone-aware task filter service
   try {
-    const result = await OptimizedDbService.getTasks(
+    const { TaskFilterService } = await import('@/lib/task-filter-service')
+    
+    const result = await TaskFilterService.getFilteredTasks(
       session.user.tenantId,
       session.user.id,
       {
@@ -152,14 +154,16 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
     }
   }
 
-  // Validate and convert dueDate if provided
+  // Validate and convert dueDate if provided using timezone-aware conversion
   let dueDate: Date | null = null
   if (validatedData.dueDate) {
+    // Import timezone service
+    const { TimezoneService } = await import('@/lib/timezone-service')
+    
     // Handle both YYYY-MM-DD and full datetime formats
     if (/^\d{4}-\d{2}-\d{2}$/.test(validatedData.dueDate)) {
-      // Date format (YYYY-MM-DD) - create date in local timezone
-      const [year, month, day] = validatedData.dueDate.split('-').map(Number)
-      dueDate = new Date(year, month - 1, day) // month is 0-indexed
+      // Date format (YYYY-MM-DD) - convert using user's timezone
+      dueDate = TimezoneService.convertToUTC(validatedData.dueDate, await TimezoneService.getUserTimezone(session.user.id))
     } else {
       // Try to parse as datetime
       dueDate = new Date(validatedData.dueDate)

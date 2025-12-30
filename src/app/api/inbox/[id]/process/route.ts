@@ -127,6 +127,17 @@ export async function POST(
           )
         }
 
+        // Handle due date conversion if provided
+        let taskDueDate: Date | null = null
+        if (validatedData.taskData!.dueDate) {
+          const { TimezoneService } = await import('@/lib/timezone-service')
+          if (/^\d{4}-\d{2}-\d{2}$/.test(validatedData.taskData!.dueDate)) {
+            taskDueDate = TimezoneService.convertToUTC(validatedData.taskData!.dueDate, await TimezoneService.getUserTimezone(session.user.id))
+          } else {
+            taskDueDate = new Date(validatedData.taskData!.dueDate)
+          }
+        }
+
         // Create task
         const task = await DatabaseConnection.withRetry(
           () => prisma.task.create({
@@ -134,7 +145,7 @@ export async function POST(
               title: validatedData.taskData!.title,
               description: validatedData.taskData!.description,
               priority: validatedData.taskData!.priority,
-              dueDate: validatedData.taskData!.dueDate ? new Date(validatedData.taskData!.dueDate) : null,
+              dueDate: taskDueDate,
               projectId: validatedData.taskData!.projectId,
               contextId: validatedData.taskData!.contextId,
               areaId: validatedData.taskData!.areaId,

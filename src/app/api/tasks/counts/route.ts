@@ -36,13 +36,13 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
   await DatabaseConnection.ensureHealthyConnection()
 
   try {
-    // Use batch operations for maximum efficiency
-    const statistics = await BatchOperations.getTaskStatistics(
+    // Use new timezone-aware task filter service for accurate counts
+    const { TaskFilterService } = await import('@/lib/task-filter-service')
+    
+    const counts = await TaskFilterService.getFilterCounts(
       session.user.tenantId,
       session.user.id
     )
-
-    const counts = statistics.counts
 
     // Cache the result
     countsCache.set(cacheKey, {
