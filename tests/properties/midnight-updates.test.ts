@@ -22,10 +22,17 @@ describe('Midnight Updates Property Tests', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     TimezoneService.clearAllCache()
+    // Ensure clean state for each test
     RealtimeUpdateService.clearAllMidnightTimers()
   })
 
   afterEach(() => {
+    // Clean up after each test
+    RealtimeUpdateService.clearAllMidnightTimers()
+  })
+
+  afterAll(() => {
+    // Final cleanup
     RealtimeUpdateService.clearAllMidnightTimers()
   })
 
@@ -83,6 +90,9 @@ describe('Midnight Updates Property Tests', () => {
       fc.asyncProperty(
         fc.constantFrom('UTC', 'America/New_York', 'Europe/London', 'Asia/Singapore'),
         async (timezone) => {
+          // Ensure clean state
+          RealtimeUpdateService.clearAllMidnightTimers()
+          
           // Mock user
           const { prisma } = await import('@/lib/prisma')
           ;(prisma.user.findUnique as jest.Mock).mockResolvedValue({
@@ -113,6 +123,9 @@ describe('Midnight Updates Property Tests', () => {
           // Times should be close (within a few seconds due to execution time)
           const timeDiff = Math.abs(timer2.scheduledFor.getTime() - timer1.scheduledFor.getTime())
           expect(timeDiff).toBeLessThan(5000) // Within 5 seconds
+          
+          // Clean up
+          RealtimeUpdateService.clearAllMidnightTimers()
         }
       ),
       { numRuns: 30 }
@@ -130,6 +143,9 @@ describe('Midnight Updates Property Tests', () => {
           { minLength: 1, maxLength: 5 }
         ),
         async (users) => {
+          // Ensure clean state
+          RealtimeUpdateService.clearAllMidnightTimers()
+          
           // Ensure unique user IDs
           const uniqueUsers = users.filter((user, index, arr) => 
             arr.findIndex(u => u.userId === user.userId) === index
@@ -169,6 +185,9 @@ describe('Midnight Updates Property Tests', () => {
             expect(remainingTimers.length).toBe(uniqueUsers.length - 1)
             expect(remainingTimers.find(t => t.userId === userToClear.userId)).toBeUndefined()
           }
+          
+          // Clean up
+          RealtimeUpdateService.clearAllMidnightTimers()
         }
       ),
       { numRuns: 30 }
@@ -232,6 +251,9 @@ describe('Midnight Updates Property Tests', () => {
           { minLength: 0, maxLength: 3 }
         ),
         async (users) => {
+          // Ensure clean state
+          RealtimeUpdateService.clearAllMidnightTimers()
+          
           // Ensure unique user IDs
           const uniqueUsers = users.filter((user, index, arr) => 
             arr.findIndex(u => u.userId === user.userId) === index
@@ -255,6 +277,9 @@ describe('Midnight Updates Property Tests', () => {
           // Timers should still be active after force refresh
           const activeTimers = RealtimeUpdateService.getActiveMidnightTimers()
           expect(activeTimers.length).toBe(uniqueUsers.length)
+          
+          // Clean up
+          RealtimeUpdateService.clearAllMidnightTimers()
         }
       ),
       { numRuns: 20 }

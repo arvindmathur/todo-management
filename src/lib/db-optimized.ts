@@ -205,7 +205,7 @@ export class OptimizedDbService {
       projectId?: string
       contextId?: string
       areaId?: string
-      dueDate?: string
+      dueDate?: "today" | "overdue" | "upcoming" | "no-due-date" | "focus"
       search?: string
       limit?: number
       offset?: number

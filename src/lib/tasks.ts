@@ -142,12 +142,43 @@ export async function isTaskUpcoming(task: Task, userId: string): Promise<boolea
   }
 }
 
+// Timezone-unaware versions for client-side use (backward compatibility)
+export function isTaskOverdueLocal(task: Task): boolean {
+  if (!task.dueDate) return false
+  
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const taskDueDate = new Date(task.dueDate.getFullYear(), task.dueDate.getMonth(), task.dueDate.getDate())
+  
+  return taskDueDate < today
+}
+
+export function isTaskDueTodayLocal(task: Task): boolean {
+  if (!task.dueDate) return false
+  
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const taskDueDate = new Date(task.dueDate.getFullYear(), task.dueDate.getMonth(), task.dueDate.getDate())
+  
+  return taskDueDate.getTime() === today.getTime()
+}
+
+export function isTaskUpcomingLocal(task: Task): boolean {
+  if (!task.dueDate) return false
+  
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const taskDueDate = new Date(task.dueDate.getFullYear(), task.dueDate.getMonth(), task.dueDate.getDate())
+  
+  return taskDueDate > today
+}
+
 export function formatDueDate(dueDate: Date): string {
   const now = new Date()
   const due = new Date(dueDate)
   
-  // Check if it's today
-  if (isTaskDueToday({ dueDate } as Task)) {
+  // Check if it's today (using local timezone)
+  if (isTaskDueTodayLocal({ dueDate } as Task)) {
     return "Today"
   }
   
@@ -273,13 +304,13 @@ export function filterTasks(tasks: Task[], filters: {
     if (filters.dueDate) {
       switch (filters.dueDate) {
         case "today":
-          if (!isTaskDueToday(task)) return false
+          if (!isTaskDueTodayLocal(task)) return false
           break
         case "overdue":
-          if (!isTaskOverdue(task)) return false
+          if (!isTaskOverdueLocal(task)) return false
           break
         case "upcoming":
-          if (!isTaskUpcoming(task)) return false
+          if (!isTaskUpcomingLocal(task)) return false
           break
       }
     }
@@ -302,9 +333,9 @@ export function getTaskCounts(tasks: Task[]): {
     total: tasks.length,
     active: active.length,
     completed: tasks.filter(t => t.status === "completed").length,
-    overdue: active.filter(isTaskOverdue).length,
-    dueToday: active.filter(isTaskDueToday).length,
-    upcoming: active.filter(isTaskUpcoming).length,
+    overdue: active.filter(isTaskOverdueLocal).length,
+    dueToday: active.filter(isTaskDueTodayLocal).length,
+    upcoming: active.filter(isTaskUpcomingLocal).length,
   }
 }
 
@@ -315,11 +346,11 @@ export function groupTasksByDate(tasks: Task[]): Record<string, Task[]> {
     let groupKey = "No Due Date"
     
     if (task.dueDate) {
-      if (isTaskOverdue(task)) {
+      if (isTaskOverdueLocal(task)) {
         groupKey = "Overdue"
-      } else if (isTaskDueToday(task)) {
+      } else if (isTaskDueTodayLocal(task)) {
         groupKey = "Today"
-      } else if (isTaskUpcoming(task)) {
+      } else if (isTaskUpcomingLocal(task)) {
         groupKey = formatDueDate(task.dueDate)
       }
     }

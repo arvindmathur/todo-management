@@ -149,9 +149,9 @@ export class RealtimeUpdateService {
    * Clear all midnight timers (for cleanup)
    */
   static clearAllMidnightTimers(): void {
-    for (const [userId, timer] of this.midnightTimers) {
+    this.midnightTimers.forEach((timer, userId) => {
       clearTimeout(timer)
-    }
+    })
     this.midnightTimers.clear()
     this.userTimezones.clear()
   }
@@ -160,20 +160,30 @@ export class RealtimeUpdateService {
    * Get active midnight timers (for monitoring)
    */
   static getActiveMidnightTimers(): Array<{ userId: string; timezone: string; scheduledFor: Date }> {
-    const active = []
+    const active: Array<{ userId: string; timezone: string; scheduledFor: Date }> = []
     
-    for (const [userId, timer] of this.midnightTimers) {
-      const timezone = this.userTimezones.get(userId) || 'Unknown'
-      const now = new Date()
-      const msUntilMidnight = this.calculateTimeUntilMidnight(timezone)
-      const scheduledFor = new Date(now.getTime() + msUntilMidnight)
+    this.midnightTimers.forEach((timer, userId) => {
+      const timezone = this.userTimezones.get(userId)
+      if (!timezone) {
+        // Skip timers without valid timezone
+        return
+      }
       
-      active.push({
-        userId,
-        timezone,
-        scheduledFor
-      })
-    }
+      try {
+        const now = new Date()
+        const msUntilMidnight = this.calculateTimeUntilMidnight(timezone)
+        const scheduledFor = new Date(now.getTime() + msUntilMidnight)
+        
+        active.push({
+          userId,
+          timezone,
+          scheduledFor
+        })
+      } catch (error) {
+        // Skip timers with invalid timezone
+        console.warn(`Skipping timer for user ${userId} with invalid timezone ${timezone}:`, error)
+      }
+    })
     
     return active
   }
@@ -184,7 +194,7 @@ export class RealtimeUpdateService {
   static async forceRefreshAllFilters(): Promise<void> {
     console.log('Force refreshing filters for all active users')
     
-    for (const [userId, timezone] of this.userTimezones) {
+    this.userTimezones.forEach(async (timezone, userId) => {
       try {
         TimezoneService.clearUserCache(userId)
         await TaskFilterService.refreshFiltersForTimezone(timezone)
@@ -192,7 +202,7 @@ export class RealtimeUpdateService {
       } catch (error) {
         console.error(`Error refreshing filters for user ${userId}:`, error)
       }
-    }
+    })
   }
 }
 
