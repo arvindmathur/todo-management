@@ -126,10 +126,7 @@ export default function AboutPage() {
         {/* Version Information */}
         <div className="text-center text-sm text-gray-500">
           <p>
-            Version 3.0.1 • Built with ❤️ for productivity enthusiasts
-          </p>
-          <p className="mt-2">
-            Built with{" "}
+            Version 3.0.2 • Built with{" "}
             <a
               href="https://kiro.ai"
               target="_blank"
