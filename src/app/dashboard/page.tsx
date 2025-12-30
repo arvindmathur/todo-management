@@ -25,6 +25,7 @@ export default function Dashboard() {
   // Use optimized task counts hook
   const { counts: taskCounts, refreshCounts } = useTaskCounts()
 
+  // Initialize with Focus filter to match the default activeView
   const {
     tasks,
     loading,
@@ -37,7 +38,7 @@ export default function Dashboard() {
     reopenTask,
     updateFilters,
     clearFilters,
-  } = useTasks()
+  } = useTasks({ status: "active", dueDate: "focus" })
 
   const { getTodayTasks, getOverdueTasks, getUpcomingTasks } = useTaskViews()
 
