@@ -227,7 +227,8 @@ export class TaskFilterService {
    */
   static async getFilterCounts(
     tenantId: string,
-    userId: string
+    userId: string,
+    includeCompleted: string = "none"
   ): Promise<FilterCounts> {
     try {
       // Get user timezone and completed task window
@@ -250,21 +251,33 @@ export class TaskFilterService {
         completedOverdueCount,
         completedUpcomingCount
       ] = await Promise.all([
-        // All tasks (active + completed within window)
+        // All tasks (active + completed within window based on user preference)
         DatabaseConnection.withRetry(
-          () => prisma.task.count({
-            where: {
-              tenantId,
-              userId,
-              OR: [
-                { status: "active" },
-                { 
-                  status: "completed",
-                  completedAt: { gte: boundaries.completedTaskCutoff }
+          () => {
+            if (includeCompleted !== "none") {
+              return prisma.task.count({
+                where: {
+                  tenantId,
+                  userId,
+                  OR: [
+                    { status: "active" },
+                    { 
+                      status: "completed",
+                      completedAt: { gte: boundaries.completedTaskCutoff }
+                    }
+                  ]
                 }
-              ]
+              })
+            } else {
+              return prisma.task.count({
+                where: {
+                  tenantId,
+                  userId,
+                  status: "active"
+                }
+              })
             }
-          }),
+          },
           'getFilterCounts-all'
         ),
 
@@ -372,10 +385,10 @@ export class TaskFilterService {
         )
       ])
 
-      // Calculate final counts including completed tasks
-      const todayTotal = todayCount + completedTodayCount
-      const overdueTotal = overdueCount + completedOverdueCount
-      const upcomingTotal = upcomingCount + completedUpcomingCount
+      // Calculate final counts including completed tasks based on user preference
+      const todayTotal = includeCompleted !== "none" ? todayCount + completedTodayCount : todayCount
+      const overdueTotal = includeCompleted !== "none" ? overdueCount + completedOverdueCount : overdueCount
+      const upcomingTotal = includeCompleted !== "none" ? upcomingCount + completedUpcomingCount : upcomingCount
       const focusTotal = todayTotal + overdueTotal
 
       return {
@@ -558,7 +571,7 @@ export class TaskFilterService {
         if (includeCompletedTasks) {
           return {
             OR: [
-              // Active today and overdue tasks
+              // Active today and overdue tasks (due before end of today)
               {
                 status: "active",
                 dueDate: { lt: boundaries.todayEnd }

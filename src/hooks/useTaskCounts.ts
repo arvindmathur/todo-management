@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useSession } from "next-auth/react"
+import { useUserPreferences } from "@/hooks/useUserPreferences"
 
 export interface TaskCounts {
   all: number
@@ -33,6 +34,7 @@ const DEFAULT_COUNTS: TaskCounts = {
 
 export function useTaskCounts() {
   const { data: session, status } = useSession()
+  const { preferencesData } = useUserPreferences()
   const [counts, setCounts] = useState<TaskCounts>(DEFAULT_COUNTS)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -51,10 +53,14 @@ export function useTaskCounts() {
     }
 
     const userId = session.user.id
+    const completedTaskVisibility = preferencesData?.preferences?.completedTaskVisibility || "none"
     const now = Date.now()
 
+    // Include completed task preference in cache key
+    const cacheKey = `${userId}:${completedTaskVisibility}`
+
     // Check cache first
-    const cached = countsCache.get(userId)
+    const cached = countsCache.get(cacheKey)
     if (cached && (now - cached.timestamp) < CACHE_DURATION) {
       if (mountedRef.current) {
         setCounts(cached.data)
@@ -64,8 +70,8 @@ export function useTaskCounts() {
       return cached.data
     }
 
-    // Check if there's already an active request for this user
-    const activeRequest = activeCountsRequests.get(userId)
+    // Check if there's already an active request for this user+preference combo
+    const activeRequest = activeCountsRequests.get(cacheKey)
     if (activeRequest) {
       try {
         const data = await activeRequest
@@ -91,7 +97,11 @@ export function useTaskCounts() {
           setLoading(true)
         }
 
-        const response = await fetch("/api/tasks/counts", {
+        // Add includeCompleted parameter to the request
+        const searchParams = new URLSearchParams()
+        searchParams.append("includeCompleted", completedTaskVisibility)
+
+        const response = await fetch(`/api/tasks/counts?${searchParams.toString()}`, {
           headers: {
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache'
@@ -105,8 +115,8 @@ export function useTaskCounts() {
         const result = await response.json()
         const countsData = result.counts || DEFAULT_COUNTS
         
-        // Cache the result
-        countsCache.set(userId, {
+        // Cache the result with the preference-specific key
+        countsCache.set(cacheKey, {
           data: countsData,
           timestamp: now
         })
@@ -126,7 +136,7 @@ export function useTaskCounts() {
         return DEFAULT_COUNTS
       } finally {
         // Clean up active request
-        activeCountsRequests.delete(userId)
+        activeCountsRequests.delete(cacheKey)
         if (mountedRef.current) {
           setLoading(false)
         }
@@ -134,24 +144,34 @@ export function useTaskCounts() {
     })()
 
     // Store the active request
-    activeCountsRequests.set(userId, requestPromise)
+    activeCountsRequests.set(cacheKey, requestPromise)
 
     return await requestPromise
-  }, [status, session?.user?.id])
+  }, [status, session?.user?.id, preferencesData?.preferences?.completedTaskVisibility])
 
   const refreshCounts = useCallback(async () => {
     if (!session?.user?.id) return
 
+    const completedTaskVisibility = preferencesData?.preferences?.completedTaskVisibility || "none"
+    const cacheKey = `${session.user.id}:${completedTaskVisibility}`
+
     // Clear cache to force fresh fetch
-    countsCache.delete(session.user.id)
-    activeCountsRequests.delete(session.user.id)
+    countsCache.delete(cacheKey)
+    activeCountsRequests.delete(cacheKey)
     
     await fetchCounts()
-  }, [session?.user?.id, fetchCounts])
+  }, [session?.user?.id, preferencesData?.preferences?.completedTaskVisibility, fetchCounts])
 
   useEffect(() => {
     fetchCounts()
   }, [fetchCounts])
+
+  // Refetch counts when completed task visibility preference changes
+  useEffect(() => {
+    if (status === "authenticated" && preferencesData?.preferences?.completedTaskVisibility !== undefined) {
+      fetchCounts()
+    }
+  }, [preferencesData?.preferences?.completedTaskVisibility, status, fetchCounts])
 
   return {
     counts,

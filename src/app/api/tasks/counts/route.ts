@@ -18,7 +18,11 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
   const session = await getServerSession(authOptions)
   requireAuth(session)
 
-  const cacheKey = `counts:${session.user.tenantId}:${session.user.id}`
+  // Get includeCompleted parameter from URL
+  const { searchParams } = new URL(request.url)
+  const includeCompleted = searchParams.get('includeCompleted') || 'none'
+
+  const cacheKey = `counts:${session.user.tenantId}:${session.user.id}:${includeCompleted}`
   const now = Date.now()
 
   // Check cache first for high performance
@@ -41,7 +45,8 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
     
     const counts = await TaskFilterService.getFilterCounts(
       session.user.tenantId,
-      session.user.id
+      session.user.id,
+      includeCompleted
     )
 
     // Cache the result
