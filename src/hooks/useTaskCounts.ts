@@ -52,6 +52,12 @@ export function useTaskCounts() {
       return DEFAULT_COUNTS
     }
 
+    // Wait for user preferences to load before making API calls
+    // This prevents race condition where API is called with default "none" value
+    if (preferencesData === null) {
+      return DEFAULT_COUNTS
+    }
+
     const userId = session.user.id
     const completedTaskVisibility = preferencesData?.preferences?.completedTaskVisibility || "none"
     const now = Date.now()
@@ -147,7 +153,7 @@ export function useTaskCounts() {
     activeCountsRequests.set(cacheKey, requestPromise)
 
     return await requestPromise
-  }, [status, session?.user?.id, preferencesData?.preferences?.completedTaskVisibility])
+  }, [status, session?.user?.id, preferencesData])
 
   const refreshCounts = useCallback(async () => {
     if (!session?.user?.id) return
@@ -163,8 +169,11 @@ export function useTaskCounts() {
   }, [session?.user?.id, preferencesData?.preferences?.completedTaskVisibility, fetchCounts])
 
   useEffect(() => {
-    fetchCounts()
-  }, [fetchCounts])
+    // Only fetch counts when user preferences are loaded to prevent race condition
+    if (preferencesData !== null) {
+      fetchCounts()
+    }
+  }, [fetchCounts, preferencesData])
 
   // Refetch counts when completed task visibility preference changes
   useEffect(() => {

@@ -389,7 +389,7 @@ export class TaskFilterService {
       const todayTotal = includeCompleted !== "none" ? todayCount + completedTodayCount : todayCount
       const overdueTotal = includeCompleted !== "none" ? overdueCount + completedOverdueCount : overdueCount
       const upcomingTotal = includeCompleted !== "none" ? upcomingCount + completedUpcomingCount : upcomingCount
-      const focusTotal = todayTotal + overdueTotal
+      const focusTotal = todayTotal + overdueTotal // Focus = Today + Overdue only
 
       return {
         all: allCount,
@@ -571,17 +571,17 @@ export class TaskFilterService {
         if (includeCompletedTasks) {
           return {
             OR: [
-              // Active today and overdue tasks (due before end of today)
+              // Active today and overdue tasks (due before tomorrow start, not end of today)
               {
                 status: "active",
-                dueDate: { lt: boundaries.todayEnd }
+                dueDate: { lt: boundaries.tomorrowStart }
               },
               // Completed tasks (today or overdue)
               {
                 status: "completed",
                 completedAt: { gte: boundaries.completedTaskCutoff },
                 OR: [
-                  { dueDate: { lt: boundaries.todayEnd } },
+                  { dueDate: { lt: boundaries.tomorrowStart } },
                   { completedAt: { gte: boundaries.todayStart, lt: boundaries.todayEnd } }
                 ]
               }
@@ -590,7 +590,7 @@ export class TaskFilterService {
         } else {
           return {
             status: "active",
-            dueDate: { lt: boundaries.todayEnd }
+            dueDate: { lt: boundaries.tomorrowStart }
           }
         }
 

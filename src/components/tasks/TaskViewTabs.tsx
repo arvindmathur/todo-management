@@ -42,7 +42,7 @@ export const TaskViewTabs = React.memo(function TaskViewTabs({
     {
       id: "all",
       label: "All Tasks",
-      filters: { status: "active" as const },
+      filters: { status: "all" as const },
       count: taskCounts?.all,
     },
     {

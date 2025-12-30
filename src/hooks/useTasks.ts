@@ -36,6 +36,12 @@ export function useTasks(initialFilters: TaskFilters = {}) {
   const fetchTasks = useCallback(async (currentFilters: TaskFilters = debouncedFilters) => {
     if (status !== "authenticated") return
 
+    // Wait for user preferences to load before making API calls
+    // This prevents race condition where API is called with default "none" value
+    if (preferencesData === null) {
+      return // Don't fetch until preferences are loaded
+    }
+
     try {
       setLoading(true)
       const searchParams = new URLSearchParams()
@@ -68,7 +74,7 @@ export function useTasks(initialFilters: TaskFilters = {}) {
     } finally {
       setLoading(false)
     }
-  }, [status, debouncedFilters, preferencesData?.preferences?.completedTaskVisibility])
+  }, [status, debouncedFilters, preferencesData])
 
   const createTask = async (taskData: CreateTaskRequest) => {
     try {
@@ -211,8 +217,11 @@ export function useTasks(initialFilters: TaskFilters = {}) {
   }
 
   useEffect(() => {
-    fetchTasks()
-  }, [fetchTasks])
+    // Only fetch tasks when user preferences are loaded to prevent race condition
+    if (preferencesData !== null) {
+      fetchTasks()
+    }
+  }, [fetchTasks, preferencesData])
 
   // Refetch tasks when completed task visibility preference changes
   useEffect(() => {
